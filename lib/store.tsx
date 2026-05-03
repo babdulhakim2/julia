@@ -1,15 +1,15 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { Entity, Item, Folder } from './types';
-import { ENTITIES_SEED, ITEMS_SEED, CATEGORIES, FOLDERS_SEED } from './data';
+import type { Entity, Item, Folder, UsageEvent } from './types';
+import { ITEMS_SEED, CATEGORIES, FOLDERS_SEED, USAGE_EVENTS_SEED } from './data';
 import { loadStore, saveStore } from './storage';
 
 export interface StoreData {
   entities: Entity[];
   items: Item[];
   folders: Folder[];
-  onboarded: boolean;
+  usageEvents: UsageEvent[];
 }
 
 export interface StoreState extends StoreData {
@@ -17,13 +17,12 @@ export interface StoreState extends StoreData {
 }
 
 type Action =
-  | { type: 'ADD_ENTITY'; entity: Entity }
-  | { type: 'REMOVE_ENTITY'; id: string }
-  | { type: 'UPDATE_ENTITY'; id: string; patch: Partial<Entity> }
   | { type: 'SET_ENTITIES'; entities: Entity[] }
   | { type: 'ADD_ITEM'; item: Item }
+  | { type: 'UPSERT_ITEMS'; items: Item[] }
+  | { type: 'REMOVE_ITEM'; id: string }
   | { type: 'UPDATE_ITEM'; id: string; patch: Partial<Item> }
-  | { type: 'SET_ONBOARDED'; value: boolean }
+  | { type: 'ADD_USAGE_EVENT'; event: UsageEvent }
   | { type: 'ADD_FOLDER'; folder: Folder }
   | { type: 'REMOVE_FOLDER'; id: string }
   | { type: 'RENAME_FOLDER'; id: string; name: string }
@@ -34,20 +33,21 @@ type Action =
 
 function reducer(state: StoreState, action: Action): StoreState {
   switch (action.type) {
-    case 'ADD_ENTITY':
-      return { ...state, entities: [...state.entities, action.entity] };
-    case 'REMOVE_ENTITY':
-      return { ...state, entities: state.entities.filter(e => e.id !== action.id) };
-    case 'UPDATE_ENTITY':
-      return { ...state, entities: state.entities.map(e => e.id === action.id ? { ...e, ...action.patch } : e) };
     case 'SET_ENTITIES':
       return { ...state, entities: action.entities };
     case 'ADD_ITEM':
       return { ...state, items: [...state.items, action.item] };
+    case 'UPSERT_ITEMS': {
+      const incoming = new Map(action.items.map(item => [item.id, item]));
+      const kept = state.items.filter(item => !incoming.has(item.id));
+      return { ...state, items: [...kept, ...action.items] };
+    }
+    case 'REMOVE_ITEM':
+      return { ...state, items: state.items.filter(i => i.id !== action.id) };
     case 'UPDATE_ITEM':
       return { ...state, items: state.items.map(i => i.id === action.id ? { ...i, ...action.patch } : i) };
-    case 'SET_ONBOARDED':
-      return { ...state, onboarded: action.value };
+    case 'ADD_USAGE_EVENT':
+      return { ...state, usageEvents: [action.event, ...state.usageEvents].slice(0, 250) };
     case 'ADD_FOLDER':
       return { ...state, folders: [...state.folders, action.folder] };
     case 'REMOVE_FOLDER':
@@ -110,10 +110,10 @@ function reducer(state: StoreState, action: Action): StoreState {
 }
 
 const initialState: StoreState = {
-  entities: ENTITIES_SEED.map(e => ({ ...e })),
+  entities: [],
   items: ITEMS_SEED.map(i => ({ ...i })),
   folders: FOLDERS_SEED.map(f => ({ ...f })),
-  onboarded: false,
+  usageEvents: USAGE_EVENTS_SEED.map(u => ({ ...u })),
   hydrated: false,
 };
 
@@ -129,14 +129,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Load from localStorage on mount
   useEffect(() => {
     const saved = loadStore();
-    if (saved && saved.entities && saved.items) {
+    if (saved && saved.items) {
       dispatch({
         type: 'HYDRATE',
         state: {
-          entities: saved.entities,
+          entities: saved.entities ?? [],
           items: saved.items,
           folders: saved.folders ?? FOLDERS_SEED.map(f => ({ ...f })),
-          onboarded: saved.onboarded ?? false,
+          usageEvents: saved.usageEvents ?? USAGE_EVENTS_SEED.map(u => ({ ...u })),
         },
       });
       return;
@@ -147,8 +147,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Persist to localStorage on state changes (skip before hydration)
   useEffect(() => {
     if (!state.hydrated) return;
-    const { entities, items, folders, onboarded } = state;
-    saveStore({ entities, items, folders, onboarded });
+    const { entities, items, folders, usageEvents } = state;
+    saveStore({ entities, items, folders, usageEvents });
   }, [state]);
 
   return (

@@ -3,7 +3,6 @@
 import React from 'react';
 import { useStore } from '@/lib/store';
 import { STATUS_META } from '@/lib/data';
-import { Ic } from '@/components/icons';
 
 interface InspectorProps {
   itemId: string;

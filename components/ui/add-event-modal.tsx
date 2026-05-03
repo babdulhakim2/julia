@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import type { Entity, Item } from '@/lib/types';
+import type { CalendarEventDraft, Entity } from '@/lib/types';
 import { Ic } from '@/components/icons';
 
 interface AddEventModalProps {
   date: string;
   entities: Entity[];
-  onAdd: (item: Item) => void;
+  onAdd: (event: CalendarEventDraft) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -21,20 +21,13 @@ export function AddEventModal({ date, entities, onAdd, onClose }: AddEventModalP
     e.preventDefault();
     if (!title.trim()) return;
 
-    const item: Item = {
-      id: `ev-${Date.now()}`,
-      entity: entityId,
-      category: 'finance',
-      type: 'Reminder',
+    const parsedAmount = amount ? Number.parseFloat(amount) : undefined;
+    void onAdd({
       title: title.trim(),
-      dueDate: eventDate,
       date: eventDate,
-      amount: amount ? parseFloat(amount) : undefined,
-      status: 'scheduled',
-      confidence: 1,
-      capturedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-    };
-    onAdd(item);
+      entityId,
+      amount: Number.isFinite(parsedAmount) ? parsedAmount : undefined,
+    });
   }
 
   return (

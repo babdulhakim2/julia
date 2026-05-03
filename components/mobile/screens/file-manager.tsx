@@ -16,7 +16,7 @@ import { useTouchDrag } from '@/lib/use-touch-drag';
 import { AutoOrganizeModal } from '@/components/shared/auto-organize-modal';
 import { computeAutoOrganize } from '@/lib/auto-organize';
 import { Toast } from '@/components/ui/toast';
-import type { Folder } from '@/lib/types';
+import type { Folder, Item } from '@/lib/types';
 
 interface FileManagerProps {
   entityId: string;
@@ -392,10 +392,9 @@ function MobileFolderTarget({ id, name, onClick, children }: {
 }
 
 // Touch-draggable item row
-function TouchDraggableItem({ item, onOpenItem, onMoveItem, children }: {
+function TouchDraggableItem({ item, onOpenItem, children }: {
   item: { id: string; title: string };
   onOpenItem: (id: string) => void;
-  onMoveItem: (id: string) => void;
   children: React.ReactNode;
 }) {
   const { startDrag, updatePosition, endDrag } = useDragDrop();
@@ -424,10 +423,10 @@ function TouchDraggableItem({ item, onOpenItem, onMoveItem, children }: {
 
 function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMoveItem }: {
   cats: typeof CATEGORIES;
-  byCat: Record<string, any[]>;
+  byCat: Record<string, Item[]>;
   category: string;
   onOpenItem: (id: string) => void;
-  items: any[];
+  items: Item[];
   hasFolders: boolean;
   onMoveItem: (id: string) => void;
 }) {
@@ -437,8 +436,8 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
     }
     return (
       <ListGroup>
-        {items.map((it: any, i: number) => (
-          <TouchDraggableItem key={it.id} item={it} onOpenItem={onOpenItem} onMoveItem={onMoveItem}>
+        {items.map((it, i) => (
+          <TouchDraggableItem key={it.id} item={it} onOpenItem={onOpenItem}>
             <div style={{
               padding: '12px 14px', cursor: 'pointer',
               borderBottom: i === items.length - 1 ? 'none' : '0.5px solid var(--hair)',
@@ -471,7 +470,7 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
     <div>
       {visible.map(c => {
         const list = byCat[c.id] || [];
-        const total = list.reduce((s: number, i: any) => s + (i.amount || 0), 0);
+        const total = list.reduce((s, i) => s + (i.amount || 0), 0);
         return (
           <div key={c.id} style={{ marginBottom: 18 }}>
             <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -484,7 +483,7 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
               {total > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto', paddingRight: 16 }}>£{total.toLocaleString()}</span>}
             </div>
             <div className="no-scrollbar" style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '4px 16px 4px' }}>
-              {list.slice(0, 6).map((it: any) => (
+              {list.slice(0, 6).map((it) => (
                 <button key={it.id} onClick={() => onOpenItem(it.id)} style={{
                   width: 138, flexShrink: 0, background: '#fff', borderRadius: 12, border: 0,
                   cursor: 'pointer', padding: 8, textAlign: 'left', fontFamily: 'var(--font)',
@@ -522,7 +521,7 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
 }
 
 function FlatListWithMove({ items, onOpenItem, onMoveItem }: {
-  items: any[];
+  items: Item[];
   onOpenItem: (id: string) => void;
   onMoveItem: (id: string) => void;
 }) {
@@ -531,8 +530,8 @@ function FlatListWithMove({ items, onOpenItem, onMoveItem }: {
   );
   return (
     <ListGroup>
-      {items.map((it: any, i: number) => (
-        <TouchDraggableItem key={it.id} item={it} onOpenItem={onOpenItem} onMoveItem={onMoveItem}>
+      {items.map((it, i) => (
+        <TouchDraggableItem key={it.id} item={it} onOpenItem={onOpenItem}>
           <div style={{
             padding: '12px 14px', cursor: 'pointer',
             borderBottom: i === items.length - 1 ? 'none' : '0.5px solid var(--hair)',

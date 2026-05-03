@@ -13,6 +13,7 @@ export type ItemStatus = 'due_soon' | 'overdue' | 'scheduled' | 'done' | 'needs_
 
 export interface Item {
   id: string;
+  convexDocumentId?: string;
   entity: string | null;
   category: string;
   type: string;
@@ -33,12 +34,39 @@ export interface Item {
   folderId?: string;
 }
 
+export interface CalendarEventDraft {
+  title: string;
+  date: string;
+  entityId: string | null;
+  amount?: number;
+  notes?: string;
+}
+
 export interface Folder {
   id: string;
   entityId: string;
   name: string;
   color?: string;
   createdAt: string;
+}
+
+export type UsageFeature =
+  | 'document_upload'
+  | 'document_processed'
+  | 'openrouter_chat'
+  | 'openrouter_extract'
+  | 'openrouter_embed'
+  | 'storage_byte';
+
+export interface UsageEvent {
+  id: string;
+  feature: UsageFeature;
+  quantity: number;
+  unit: 'count' | 'token' | 'byte' | 'usd_micros';
+  entityId?: string;
+  provider?: string;
+  model?: string;
+  occurredAt: string;
 }
 
 export interface Contact {

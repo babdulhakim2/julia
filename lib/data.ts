@@ -1,4 +1,4 @@
-import type { Entity, Item, Contact, Category, StatusMetaMap, Folder } from './types';
+import type { Entity, Item, Contact, Category, StatusMetaMap, Folder, UsageEvent } from './types';
 
 export const TODAY = '2026-05-02';
 
@@ -29,6 +29,14 @@ export const FOLDERS_SEED: Folder[] = [
   { id: 'f1', entityId: 'newwok-norbury', name: 'Tax & HMRC', color: 'oklch(0.55 0.14 25)', createdAt: '2026-04-01' },
   { id: 'f2', entityId: 'newwok-norbury', name: 'Utilities', color: 'oklch(0.62 0.14 60)', createdAt: '2026-04-01' },
   { id: 'f3', entityId: 'newwok-norbury', name: 'Suppliers', color: 'oklch(0.55 0.14 150)', createdAt: '2026-04-01' },
+];
+
+export const USAGE_EVENTS_SEED: UsageEvent[] = [
+  { id: 'u1', feature: 'document_upload', quantity: 18, unit: 'count', occurredAt: '2026-05-01T10:00:00.000Z' },
+  { id: 'u2', feature: 'document_processed', quantity: 15, unit: 'count', occurredAt: '2026-05-01T10:02:00.000Z' },
+  { id: 'u3', feature: 'openrouter_extract', quantity: 48200, unit: 'token', provider: 'openrouter', model: 'google/gemini-2.5-flash', occurredAt: '2026-05-01T10:03:00.000Z' },
+  { id: 'u4', feature: 'openrouter_chat', quantity: 6400, unit: 'token', provider: 'openrouter', model: 'google/gemini-2.5-flash', occurredAt: '2026-05-02T09:15:00.000Z' },
+  { id: 'u5', feature: 'storage_byte', quantity: 32400000, unit: 'byte', occurredAt: '2026-05-02T09:15:00.000Z' },
 ];
 
 export const ITEMS_SEED: Item[] = [

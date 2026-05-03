@@ -36,8 +36,8 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function DraggableItemRow({ item, ent, selected, onSelect }: {
-  item: Item; ent: Record<string, Entity>; selected: boolean; onSelect: (id: string) => void;
+function DraggableItemRow({ item, selected, onSelect }: {
+  item: Item; selected: boolean; onSelect: (id: string) => void;
 }) {
   const { startDrag, updatePosition, endDrag, state } = useDragDrop();
   const meta = STATUS_META[item.status];
@@ -104,7 +104,7 @@ function DraggableItemRow({ item, ent, selected, onSelect }: {
         width: '100%', padding: '11px 24px', alignItems: 'center', gap: 0,
         background: selected ? 'var(--sel-bg)' : 'transparent', border: 0, borderBottom: '0.5px solid var(--hair)',
         fontFamily: 'var(--font)', textAlign: 'left',
-        cursor: isDraggingRef.current ? 'grabbing' : 'grab',
+        cursor: 'grab',
         color: 'var(--ink)', userSelect: 'none',
       }}
       onMouseEnter={(ev) => { if (!selected) ev.currentTarget.style.background = 'var(--row-hover)'; }}
@@ -169,8 +169,6 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
   const cats = CATEGORIES.filter(c => (byCat[c.id] || []).length > 0);
   const tabItems = tab === 'all' ? filtered : (byCat[tab] || []);
   const total = filtered.reduce((s, i) => s + (i.amount || 0), 0);
-  const ent = Object.fromEntries(state.entities.map(e => [e.id, e]));
-
   const displayItems = activeFolderId
     ? tabItems.filter(i => i.folderId === activeFolderId)
     : tabItems;
@@ -377,7 +375,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
                 <span style={{ textAlign: 'right' }}>Amount</span>
               </div>
               {displayItems.map(it => (
-                <DraggableItemRow key={it.id} item={it} ent={ent} selected={selectedId === it.id} onSelect={onSelect} />
+                <DraggableItemRow key={it.id} item={it} selected={selectedId === it.id} onSelect={onSelect} />
               ))}
             </div>
           </>
@@ -402,7 +400,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
                     <span style={{ textAlign: 'right' }}>Amount</span>
                   </div>
                   {(folders.length > 0 ? unfiledItems : tabItems).map(it => (
-                    <DraggableItemRow key={it.id} item={it} ent={ent} selected={selectedId === it.id} onSelect={onSelect} />
+                    <DraggableItemRow key={it.id} item={it} selected={selectedId === it.id} onSelect={onSelect} />
                   ))}
                 </div>
               </>

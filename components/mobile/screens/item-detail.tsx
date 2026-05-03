@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { useStore } from '@/lib/store';
-import { fmtDate } from '@/lib/utils';
 import { Ic } from '@/components/icons';
 import { StatusPill } from '@/components/ui/status-pill';
 import { ListGroup } from '@/components/ui/list-group';

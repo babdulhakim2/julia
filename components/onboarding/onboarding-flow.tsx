@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import type { Entity } from '@/lib/types';
-import { useStore } from '@/lib/store';
-import { ENTITIES_SEED } from '@/lib/data';
+import { useUser } from '@clerk/nextjs';
+import { useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 import { Ic, getIcon } from '@/components/icons';
 import { Btn } from '@/components/ui/button';
 import { AddEntityForm, TYPE_PRESETS } from './add-entity-form';
@@ -11,6 +11,20 @@ import { AddEntityForm, TYPE_PRESETS } from './add-entity-form';
 interface OnboardingProps {
   onDone: () => void;
 }
+
+interface OnboardingEntity {
+  name: string;
+  kind: 'business' | 'property' | 'vehicle' | 'personal';
+  subtitle: string;
+  icon: string;
+  color: string;
+  identifiers: Record<string, string>;
+}
+
+const ENTITY_COLORS = [
+  'oklch(0.62 0.13 28)', 'oklch(0.62 0.13 80)', 'oklch(0.62 0.10 200)',
+  'oklch(0.55 0.10 250)', 'oklch(0.62 0.06 300)', 'oklch(0.55 0.14 150)',
+];
 
 function Channel({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
   return (
@@ -26,36 +40,65 @@ function Channel({ icon, title, sub }: { icon: React.ReactNode; title: string; s
 }
 
 export function OnboardingFlow({ onDone }: OnboardingProps) {
-  const { dispatch } = useStore();
+  const { user } = useUser();
+  const createWorkspace = useMutation(api.workspaces.create);
+  const createEntity = useMutation(api.entities.create);
+  const completeOnboarding = useMutation(api.users.completeOnboarding);
+
   const [step, setStep] = useState(0);
-  const [entities, setEntities] = useState<Entity[]>([]);
+  const [entities, setEntities] = useState<OnboardingEntity[]>([]);
   const [adding, setAdding] = useState<{ type: string; name: string; sub: string; info: Record<string, string> } | null>(null);
-  const fmtId = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Math.random().toString(36).slice(2, 6);
+  const [saving, setSaving] = useState(false);
 
   function commitAdd() {
     if (!adding?.name?.trim()) return;
     const preset = TYPE_PRESETS[adding.type];
-    const e: Entity = {
-      id: fmtId(adding.name),
+    const e: OnboardingEntity = {
       name: adding.name.trim(),
-      type: adding.type as Entity['type'],
-      sub: adding.sub?.trim() || preset.subPlaceholder,
+      kind: adding.type as OnboardingEntity['kind'],
+      subtitle: adding.sub?.trim() || preset.subPlaceholder,
       icon: preset.icon,
-      color: preset.color,
-      count: 0,
-      info: adding.info || {},
+      color: ENTITY_COLORS[entities.length % ENTITY_COLORS.length],
+      identifiers: adding.info || {},
     };
     setEntities(es => [...es, e]);
     setAdding(null);
   }
 
-  function finish() {
-    if (entities.length > 0) {
-      dispatch({ type: 'SET_ENTITIES', entities });
+  async function finish() {
+    if (saving || entities.length === 0) return;
+    setSaving(true);
+    try {
+      // 1. Create workspace
+      const workspaceId = await createWorkspace({
+        name: user?.fullName ? `${user.firstName}'s workspace` : 'My workspace',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+
+      // 2. Create each entity
+      for (const e of entities) {
+        await createEntity({
+          workspaceId,
+          kind: e.kind,
+          name: e.name,
+          subtitle: e.subtitle,
+          icon: e.icon,
+          color: e.color,
+          identifiers: e.identifiers,
+        });
+      }
+
+      // 3. Complete onboarding
+      await completeOnboarding();
+
+      onDone();
+    } catch (err) {
+      console.error('Onboarding error:', err);
+      setSaving(false);
     }
-    dispatch({ type: 'SET_ONBOARDED', value: true });
-    onDone();
   }
+
+  const firstName = user?.firstName ?? 'there';
 
   if (step === 0) {
     return (
@@ -68,13 +111,13 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
           </div>
           <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--ink)', letterSpacing: -1,
             lineHeight: 1.05, fontFamily: 'var(--font-display)' }}>
-            Hi Julia.<br/>I&apos;m your secretary.
+            Hi {firstName}.<br/>I&apos;m your secretary.
           </div>
           <div style={{ fontSize: 17, color: 'var(--muted)', marginTop: 16, lineHeight: 1.4 }}>
             You take photos. I file, remind, and draft replies. A real human checks anything I&apos;m unsure about &mdash; within 10 minutes.
           </div>
         </div>
-        <Btn full size="lg" variant="dark" onClick={() => setStep(1)}>Get set up · 5 minutes</Btn>
+        <Btn full size="lg" variant="dark" onClick={() => setStep(1)}>Get set up</Btn>
         <div style={{ textAlign: 'center', marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
           We&apos;ll text you on WhatsApp too.
         </div>
@@ -97,44 +140,44 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px' }}>
-          {/* Presets — quick-add from seed data */}
-          {(() => {
-            const addedIds = new Set(entities.map(e => e.id));
-            const available = ENTITIES_SEED.filter(e => !addedIds.has(e.id));
-            if (available.length === 0) return null;
-            return (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-                  Suggestions
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {available.map(preset => (
-                    <button key={preset.id} onClick={() => setEntities(es => [...es, { ...preset }])}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px 8px 10px',
-                        background: '#fff', border: '0.5px solid var(--sep)', borderRadius: 10,
-                        cursor: 'pointer', fontFamily: 'var(--font)', transition: 'background 0.15s',
-                      }}>
-                      <div style={{ width: 26, height: 26, borderRadius: 7, background: preset.color,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        {getIcon(preset.icon, 14, '#fff')}
-                      </div>
-                      <div style={{ textAlign: 'left' }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{preset.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.2 }}>{preset.sub}</div>
-                      </div>
-                      <div style={{ marginLeft: 2, color: 'var(--accent)', flexShrink: 0 }}>{Ic.plus(14, 'var(--accent)', 2)}</div>
-                    </button>
-                  ))}
-                </div>
+          {/* Suggestion for Personal */}
+          {entities.length === 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                Suggestions
               </div>
-            );
-          })()}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button onClick={() => setEntities([{
+                  name: 'Personal',
+                  kind: 'personal',
+                  subtitle: 'You & family',
+                  icon: 'user',
+                  color: 'oklch(0.62 0.06 300)',
+                  identifiers: {},
+                }])}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px 8px 10px',
+                    background: '#fff', border: '0.5px solid var(--sep)', borderRadius: 10,
+                    cursor: 'pointer', fontFamily: 'var(--font)', transition: 'background 0.15s',
+                  }}>
+                  <div style={{ width: 26, height: 26, borderRadius: 7, background: 'oklch(0.62 0.06 300)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {getIcon('user', 14, '#fff')}
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>Personal</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.2 }}>You & family</div>
+                  </div>
+                  <div style={{ marginLeft: 2, color: 'var(--accent)', flexShrink: 0 }}>{Ic.plus(14, 'var(--accent)', 2)}</div>
+                </button>
+              </div>
+            </div>
+          )}
 
           {entities.length > 0 && (
             <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
               {entities.map((e, i) => (
-                <div key={e.id} style={{
+                <div key={`${e.name}-${i}`} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
                   borderBottom: i === entities.length - 1 ? 'none' : '0.5px solid var(--hair)',
                 }}>
@@ -144,9 +187,9 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, color: 'var(--ink)', fontWeight: 500 }}>{e.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>{e.sub}</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>{e.subtitle}</div>
                   </div>
-                  <button onClick={() => setEntities(es => es.filter(x => x.id !== e.id))}
+                  <button onClick={() => setEntities(es => es.filter((_, idx) => idx !== i))}
                     style={{ background: 'transparent', border: 0, color: 'var(--muted2)', cursor: 'pointer', padding: 4 }}>
                     {Ic.x(18, 'var(--muted2)')}
                   </button>
@@ -220,7 +263,7 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
               textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Or, send by</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <Channel icon={Ic.paperclip(16, 'var(--accent)')} title="WhatsApp" sub="+44 7700 900100" />
-              <Channel icon={Ic.doc(16, 'var(--accent)')} title="Email forward" sub="julia@inbox.secretary.app" />
+              <Channel icon={Ic.doc(16, 'var(--accent)')} title="Email forward" sub="inbox@secretary.app" />
               <Channel icon={Ic.mic(16, 'var(--accent)')} title="Voice notes" sub="Same WhatsApp number" />
             </div>
           </div>
@@ -228,7 +271,9 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
 
         <div style={{ padding: '12px 16px 0', display: 'flex', gap: 8 }}>
           <Btn variant="secondary" size="lg" style={{ flex: 1 }} onClick={() => setStep(1)}>Back</Btn>
-          <Btn variant="dark" size="lg" style={{ flex: 2 }} onClick={finish}>I&apos;ll start now</Btn>
+          <Btn variant="dark" size="lg" style={{ flex: 2 }} onClick={finish} disabled={saving}>
+            {saving ? 'Setting up...' : "I'll start now"}
+          </Btn>
         </div>
       </div>
     );

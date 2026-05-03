@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Ic } from '@/components/icons';
-import { useStore } from '@/lib/store';
-import type { Item } from '@/lib/types';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 
 interface UploadModalProps {
   onClose: () => void;
@@ -11,7 +12,34 @@ interface UploadModalProps {
 
 interface FileEntry {
   name: string;
-  stage: 'uploading' | 'extracting' | 'done';
+  stage: 'uploading' | 'processing' | 'done' | 'error';
+  error?: string;
+}
+
+const ACCEPTED_DOCUMENTS = [
+  'image/*',
+  '.pdf',
+  '.txt',
+  '.csv',
+  '.json',
+  '.doc',
+  '.docx',
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'application/json',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+].join(',');
+
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+function supportedFile(file: File) {
+  const extension = file.name.toLowerCase().split('.').pop();
+  return (
+    file.type.startsWith('image/') ||
+    ['pdf', 'txt', 'csv', 'json', 'doc', 'docx'].includes(extension ?? '')
+  );
 }
 
 function Channel2({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
@@ -28,39 +56,132 @@ function Channel2({ icon, title, sub }: { icon: React.ReactNode; title: string; 
 }
 
 export function DesktopUploadModal({ onClose }: UploadModalProps) {
-  const { state, dispatch } = useStore();
+  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const generateUploadUrl = useMutation(api.files.generateUploadUrl);
+  const storeDocumentFile = useMutation(api.files.storeDocumentFile);
+  const createCaptureSession = useMutation(api.captureSessions.create);
+  const createProcessingJob = useMutation(api.processingJobs.create);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<Id<'captureSessions'> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const activeSession = useQuery(
+    api.captureSessions.get,
+    activeSessionId ? { sessionId: activeSessionId } : 'skip',
+  );
 
-  function handleFiles(fileList: FileList) {
-    const newFiles: FileEntry[] = Array.from(fileList).map(f => ({ name: f.name, stage: 'uploading' as const }));
-    setFiles(prev => [...prev, ...newFiles]);
+  useEffect(() => {
+    if (!activeSession) return;
+    if (activeSession.status === 'filed' || activeSession.status === 'needs_review') {
+      setFiles(prev => prev.map(f => f.stage === 'processing' ? { ...f, stage: 'done' } : f));
+    }
+    if (activeSession.status === 'failed') {
+      setFiles(prev => prev.map(f => f.stage === 'processing'
+        ? { ...f, stage: 'error', error: activeSession.errorMessage ?? 'Processing failed' }
+        : f));
+    }
+  }, [activeSession]);
 
-    newFiles.forEach((entry, idx) => {
-      const baseIdx = files.length + idx;
-      // Simulate upload
-      setTimeout(() => {
-        setFiles(prev => prev.map((f, i) => i === baseIdx ? { ...f, stage: 'extracting' } : f));
-        // Simulate extraction
-        setTimeout(() => {
-          setFiles(prev => prev.map((f, i) => i === baseIdx ? { ...f, stage: 'done' } : f));
-          // Create item
-          const item: Item = {
-            id: `up-${Date.now()}-${idx}`,
-            entity: state.entities[0]?.id || null,
-            category: 'finance',
-            type: 'Document',
-            title: entry.name.replace(/\.[^.]+$/, ''),
-            date: new Date().toISOString().slice(0, 10),
-            status: 'needs_review',
-            confidence: 0.7,
-            capturedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          };
-          dispatch({ type: 'ADD_ITEM', item });
-        }, 1200);
-      }, 500);
-    });
+  async function handleFiles(fileList: FileList) {
+    setError(null);
+    if (!workspace) {
+      setError('Finish onboarding before uploading documents.');
+      return;
+    }
+
+    const fileArray = Array.from(fileList).filter(file => supportedFile(file) && file.size <= MAX_FILE_BYTES);
+    if (fileArray.length === 0) {
+      setError('Use images, PDFs, text files, or Word documents under 25 MB.');
+      return;
+    }
+    const newEntries: FileEntry[] = fileArray.map(f => ({
+      name: f.name,
+      stage: 'uploading' as const,
+    }));
+    const baseIdx = files.length;
+    setFiles(prev => [...prev, ...newEntries]);
+
+    try {
+      // Create capture session
+      const sessionId = await createCaptureSession({
+        workspaceId: workspace._id,
+        source: 'upload',
+        pageCount: fileArray.length,
+      });
+      setActiveSessionId(sessionId);
+
+      // Upload each file
+      let uploadedCount = 0;
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        const idx = baseIdx + i;
+
+        try {
+          // Get upload URL
+          const uploadUrl = await generateUploadUrl();
+
+          // Upload the file
+          const uploadRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': file.type },
+            body: file,
+          });
+
+          if (!uploadRes.ok) {
+            throw new Error(`Upload failed: ${uploadRes.status}`);
+          }
+
+          const { storageId } = await uploadRes.json();
+
+          // Store file reference
+          await storeDocumentFile({
+            workspaceId: workspace._id,
+            captureSessionId: sessionId,
+            storageId,
+            fileName: file.name,
+            contentType: file.type || 'application/octet-stream',
+            byteSize: file.size,
+            pageNumber: i + 1,
+          });
+          uploadedCount += 1;
+
+          setFiles(prev =>
+            prev.map((f, fi) =>
+              fi === idx ? { ...f, stage: 'processing' } : f,
+            ),
+          );
+        } catch (err) {
+          setFiles(prev =>
+            prev.map((f, fi) =>
+              fi === idx
+                ? { ...f, stage: 'error', error: err instanceof Error ? err.message : 'Upload failed' }
+                : f,
+            ),
+          );
+        }
+      }
+
+      if (uploadedCount === 0) {
+        throw new Error('No files uploaded successfully');
+      }
+
+      // Kick off document ingest processing job
+      await createProcessingJob({
+        workspaceId: workspace._id,
+        kind: 'document_ingest',
+        captureSessionId: sessionId,
+        provider: 'openrouter',
+        model: 'google/gemini-2.5-flash',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload pipeline failed';
+      setError(message);
+      setFiles(prev => prev.map((f, fi) => fi >= baseIdx && f.stage !== 'done'
+        ? { ...f, stage: 'error', error: message }
+        : f));
+    }
   }
 
   function onDrop(e: React.DragEvent) {
@@ -126,11 +247,19 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
               ref={fileInputRef}
               type="file"
               multiple
-              accept="image/*,.pdf"
+              accept={ACCEPTED_DOCUMENTS}
               onChange={e => { if (e.target.files && e.target.files.length > 0) handleFiles(e.target.files); }}
               style={{ display: 'none' }}
             />
           </div>
+
+          {error && (
+            <div style={{ marginTop: 10, padding: '9px 11px', borderRadius: 8,
+              background: 'oklch(0.96 0.04 25)', color: 'oklch(0.45 0.18 25)',
+              fontSize: 12.5, fontWeight: 600 }}>
+              {error}
+            </div>
+          )}
 
           {/* File progress list */}
           {files.length > 0 && (
@@ -145,12 +274,14 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {f.stage === 'done' ? (
-                      <span style={{ color: 'oklch(0.55 0.14 150)', fontSize: 12, fontWeight: 600 }}>✓ Filed</span>
+                      <span style={{ color: 'oklch(0.55 0.14 150)', fontSize: 12, fontWeight: 600 }}>Processed</span>
+                    ) : f.stage === 'error' ? (
+                      <span title={f.error} style={{ color: 'oklch(0.55 0.20 25)', fontSize: 12, fontWeight: 600 }}>Error</span>
                     ) : (
                       <>
                         <Spinner />
                         <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>
-                          {f.stage === 'uploading' ? 'Uploading…' : 'Extracting…'}
+                          {f.stage === 'uploading' ? 'Uploading...' : 'Processing...'}
                         </span>
                       </>
                     )}
@@ -162,7 +293,7 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
 
           <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
             <Channel2 icon={Ic.paperclip(14, 'var(--accent)')} title="WhatsApp" sub="+44 7700 900100" />
-            <Channel2 icon={Ic.doc(14, 'var(--accent)')} title="Email" sub="julia@inbox.secretary.app" />
+            <Channel2 icon={Ic.doc(14, 'var(--accent)')} title="Email" sub="inbox@secretary.app" />
             <Channel2 icon={Ic.cal(14, 'var(--accent)')} title="Drive sync" sub="Auto-import folder" />
           </div>
         </div>

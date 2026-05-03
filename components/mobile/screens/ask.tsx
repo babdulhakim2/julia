@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useUser } from '@clerk/nextjs';
 import { useStore } from '@/lib/store';
 import { fmtDate } from '@/lib/utils';
 import { Ic } from '@/components/icons';
 import { NavBar } from '@/components/ui/nav-bar';
+import { askSecretary } from '@/lib/assistant-client';
 
 interface AskViewProps {
   onOpenItem: (id: string) => void;
@@ -18,11 +20,14 @@ interface Message {
 }
 
 export function AskView({ onOpenItem }: AskViewProps) {
-  const { state } = useStore();
+  const { user } = useUser();
+  const { state, dispatch } = useStore();
+  const firstName = user?.firstName ?? 'there';
   const [messages, setMessages] = useState<Message[]>([
-    { from: 'bot', kind: 'greet', text: "Morning Julia. Quiet day so far. What can I look up?" },
+    { from: 'bot', kind: 'greet', text: `Morning ${firstName}. Quiet day so far. What can I look up?` },
   ]);
   const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
 
   const suggestions = [
     "What's due this week?",
@@ -31,24 +36,22 @@ export function AskView({ onOpenItem }: AskViewProps) {
     "Anything overdue?",
   ];
 
-  function send(text: string) {
-    if (!text.trim()) return;
+  async function send(text: string) {
+    if (!text.trim() || sending) return;
     const userMsg: Message = { from: 'user', text };
-    let reply: Message;
-    const t = text.toLowerCase();
-    if (t.includes('due') && (t.includes('week') || t.includes('soon'))) {
-      reply = { from: 'bot', kind: 'list', text: "4 things this week, £547 total:", items: ['i1','i2','i5'] };
-    } else if (t.includes('mot')) {
-      reply = { from: 'bot', kind: 'card', text: "MOT for Mercedes LT21 ABC is due 12 June 2026. I'll remind you 14 days before — 29 May.", items: ['i4'] };
-    } else if (t.includes('norbury') || t.includes('chinese') || t.includes('shop')) {
-      reply = { from: 'bot', kind: 'list', text: "Everything for New Wok Norbury — 14 items, 2 open:", items: ['i3','i6'] };
-    } else if (t.includes('overdue')) {
-      reply = { from: 'bot', kind: 'list', text: "Just one — British Gas, 2 days late. Want me to draft an email asking for a payment plan?", items: ['i5'] };
-    } else {
-      reply = { from: 'bot', text: "Looking that up… I'll get back to you in a sec." };
-    }
-    setMessages(m => [...m, userMsg, reply]);
+    setMessages(m => [...m, userMsg, { from: 'bot', text: 'Looking...' }]);
     setInput('');
+    setSending(true);
+    const reply = await askSecretary(text, state);
+    if (reply.usageEvent) {
+      dispatch({ type: 'ADD_USAGE_EVENT', event: reply.usageEvent });
+    }
+    setMessages(m => m.map((message, index) => (
+      index === m.length - 1
+        ? { from: 'bot', kind: reply.items?.length ? 'list' : undefined, text: reply.text, items: reply.items }
+        : message
+    )));
+    setSending(false);
   }
 
   const ent = Object.fromEntries(state.entities.map(e => [e.id, e]));
@@ -151,7 +154,7 @@ export function AskView({ onOpenItem }: AskViewProps) {
           }}>{Ic.mic(20, 'var(--muted)')}</button>
           <button onClick={() => send(input)} style={{
             width: 32, height: 32, borderRadius: 16, border: 0, cursor: 'pointer',
-            background: input ? 'var(--ink)' : 'var(--muted2)', color: '#fff',
+            background: input && !sending ? 'var(--ink)' : 'var(--muted2)', color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>{Ic.arrowUp(16, '#fff')}</button>
         </div>

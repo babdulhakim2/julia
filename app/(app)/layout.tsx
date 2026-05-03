@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import { useConvexAuth, useMutation, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 import { useStore } from '@/lib/store';
+import type { Entity, Item, ItemStatus } from '@/lib/types';
 import { DesktopSidebar } from '@/components/desktop/sidebar';
 import { DesktopInspector } from '@/components/desktop/inspector';
 import { TabBar } from '@/components/mobile/tab-bar';
@@ -22,10 +25,74 @@ function loadSelectedItemId() {
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { state, hydrated } = useStore();
+  const { isAuthenticated } = useConvexAuth();
+  const { dispatch } = useStore();
+  const storeUser = useMutation(api.users.store);
+  const userSynced = useRef(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [filedToast, setFiledToast] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState(loadSelectedItemId);
+
+  // Convex-backed onboarding gate
+  const me = useQuery(api.users.getMe);
+  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const entities = useQuery(
+    api.entities.listByWorkspace,
+    workspace ? { workspaceId: workspace._id } : "skip",
+  );
+  const documents = useQuery(
+    api.documents.listByWorkspace,
+    workspace ? { workspaceId: workspace._id } : "skip",
+  );
+
+  // Sync Clerk identity → Convex users table
+  useEffect(() => {
+    if (isAuthenticated && !userSynced.current) {
+      userSynced.current = true;
+      storeUser().catch(() => {
+        userSynced.current = false;
+      });
+    }
+  }, [isAuthenticated, storeUser]);
+
+  // Sync Convex entities → localStorage store for backward compatibility
+  useEffect(() => {
+    if (!entities) return;
+    const mapped: Entity[] = entities.map(e => ({
+      id: e._id,
+      name: e.name,
+      type: e.kind,
+      sub: e.subtitle ?? '',
+      icon: e.icon,
+      color: e.color,
+      count: 0,
+      info: e.identifiers,
+    }));
+    dispatch({ type: 'SET_ENTITIES', entities: mapped });
+  }, [entities, dispatch]);
+
+  useEffect(() => {
+    if (!documents) return;
+    const mapped: Item[] = documents.map(doc => ({
+      id: `doc-${doc._id}`,
+      convexDocumentId: doc._id,
+      entity: doc.entityId ?? null,
+      category: doc.category,
+      type: doc.documentType,
+      title: doc.title,
+      amount: doc.amount ? Math.round(doc.amount.amountMinor / 100) : undefined,
+      dueDate: doc.dueAt ? dateFromTimestamp(doc.dueAt) : undefined,
+      date: dateFromTimestamp(doc.issuedAt ?? doc.capturedAt ?? doc.createdAt),
+      issuer: doc.issuer,
+      ref: doc.reference,
+      status: itemStatusFromDocument(doc.status),
+      confidence: doc.confidence,
+      capturedAt: timestampLabel(doc.capturedAt),
+      preview: doc.category,
+      tags: doc.tags,
+    }));
+    dispatch({ type: 'UPSERT_ITEMS', items: mapped });
+  }, [documents, dispatch]);
 
   // Persist selectedItemId
   useEffect(() => {
@@ -34,12 +101,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [selectedItemId]);
 
-  if (!hydrated) {
+  // Loading state — queries haven't resolved yet
+  if (me === undefined) {
     return null;
   }
 
-  if (!state.onboarded) {
+  // Not authenticated (shouldn't happen — Clerk middleware handles)
+  if (me === null) {
+    return null;
+  }
+
+  // Onboarding gate: incomplete onboarding or no entities → redirect
+  if (!me.onboardingComplete || (entities !== undefined && entities.length === 0)) {
     return <ClientRedirect href="/onboarding" />;
+  }
+
+  // Still loading entities
+  if (entities === undefined) {
+    return null;
   }
 
   // Mobile capture flow (full screen takeover)
@@ -68,7 +147,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             onClose={() => setCaptureOpen(false)}
             onFiled={(pages) => {
               setCaptureOpen(false);
-              setFiledToast(`Filed ${pages.length} item${pages.length > 1 ? 's' : ''} · reminders set`);
+              setFiledToast(`Uploaded ${pages.length} page${pages.length > 1 ? 's' : ''} · processing`);
               setTimeout(() => setFiledToast(null), 3000);
             }}
           />
@@ -107,9 +186,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Context for selectedItemId so route pages can access it
-import { createContext, useContext } from 'react';
-
 const SelectedItemContext = createContext<{
   selectedItemId: string;
   setSelectedItemId: (id: string) => void;
@@ -117,4 +193,18 @@ const SelectedItemContext = createContext<{
 
 export function useSelectedItem() {
   return useContext(SelectedItemContext);
+}
+
+function dateFromTimestamp(timestamp: number) {
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function timestampLabel(timestamp: number) {
+  return new Date(timestamp).toISOString().slice(0, 16).replace('T', ' ');
+}
+
+function itemStatusFromDocument(status: string): ItemStatus {
+  if (status === 'processing') return 'drafting';
+  if (status === 'archived') return 'done';
+  return status as ItemStatus;
 }

@@ -3,6 +3,10 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useUser } from '@clerk/nextjs';
+import { UserButton } from '@clerk/nextjs';
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 import { useStore } from '@/lib/store';
 import { Ic, getIcon } from '@/components/icons';
 
@@ -11,11 +15,20 @@ interface SidebarProps {
 }
 
 export function DesktopSidebar({ onCapture }: SidebarProps) {
+  const { user } = useUser();
   const { state } = useStore();
   const pathname = usePathname();
-  const { entities, items } = state;
+  const isAdmin = useQuery(api.admin.isAdmin);
+  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const convexEntities = useQuery(
+    api.entities.listByWorkspace,
+    workspace ? { workspaceId: workspace._id } : "skip",
+  );
+  const { items } = state;
   const review = items.filter(i => i.status === 'needs_review').length;
   const dueSoon = items.filter(i => i.status === 'due_soon' || i.status === 'overdue').length;
+
+  const entities = convexEntities ?? [];
 
   const navItems = [
     { href: '/inbox', label: 'Everything', icon: 'inbox', badge: items.filter(i => i.status !== 'done').length },
@@ -23,6 +36,7 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
     { href: '/calendar', label: 'Calendar', icon: 'cal', badge: dueSoon },
     { href: '/ask', label: 'Ask', icon: 'sparkle', badge: 0 },
     { href: '/contacts', label: 'Contacts', icon: 'user', badge: 0 },
+    ...(isAdmin === true ? [{ href: '/admin', label: 'Admin', icon: 'bolt', badge: review }] : []),
   ];
 
   function isActive(href: string) {
@@ -30,6 +44,8 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
     if (href === '/files') return pathname === '/files';
     return pathname.startsWith(href);
   }
+
+  const fullName = user?.fullName ?? 'Loading...';
 
   return (
     <aside style={{
@@ -100,10 +116,9 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
       </div>
       <div style={{ padding: '0 8px', overflowY: 'auto', flex: 1 }}>
         {entities.map(e => {
-          const active = pathname === `/files/${e.id}` || pathname.startsWith(`/files/${e.id}/`);
-          const count = items.filter(i => i.entity === e.id && i.status !== 'done').length;
+          const active = pathname === `/files/${e._id}` || pathname.startsWith(`/files/${e._id}/`);
           return (
-            <Link key={e.id} href={`/files/${e.id}`} style={{
+            <Link key={e._id} href={`/files/${e._id}`} style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 9,
               padding: '6px 10px', marginBottom: 1, borderRadius: 7,
               background: active ? 'rgba(0,0,0,0.06)' : 'transparent', cursor: 'pointer',
@@ -115,25 +130,20 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
                 {getIcon(e.icon, 10, '#fff')}
               </span>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</span>
-              {count ? (
-                <span style={{ fontSize: 11, color: 'var(--muted2)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
-              ) : null}
             </Link>
           );
         })}
       </div>
 
       {/* Footer */}
-      <Link href="/settings" style={{ padding: '12px 14px', borderTop: '0.5px solid var(--sep)',
-        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textDecoration: 'none', color: 'inherit' }}>
-        <div style={{ width: 26, height: 26, borderRadius: 99, background: 'oklch(0.85 0.04 50)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 600, color: 'var(--ink2)' }}>JC</div>
+      <div style={{ padding: '12px 14px', borderTop: '0.5px solid var(--sep)',
+        display: 'flex', alignItems: 'center', gap: 10 }}>
+        <UserButton />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>Julia Chen</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)' }}>Multi · {entities.length} entities</div>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{fullName}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{entities.length} entit{entities.length === 1 ? 'y' : 'ies'}</div>
         </div>
-      </Link>
+      </div>
     </aside>
   );
 }

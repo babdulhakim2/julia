@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useStore } from '@/lib/store';
+import { useUser, useClerk } from '@clerk/nextjs';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 import { getIcon, Ic } from '@/components/icons';
 import { NavBar } from '@/components/ui/nav-bar';
 import { NavBtn } from '@/components/ui/nav-btn';
 import { ListGroup } from '@/components/ui/list-group';
-import { Row } from '@/components/ui/row';
-import type { Entity } from '@/lib/types';
 
 const ENTITY_TYPES = ['business', 'property', 'vehicle', 'personal'] as const;
 const ENTITY_COLORS = [
@@ -15,30 +15,47 @@ const ENTITY_COLORS = [
   'oklch(0.55 0.10 250)', 'oklch(0.62 0.06 300)', 'oklch(0.55 0.14 150)',
 ];
 
+const ICON_MAP: Record<string, string> = {
+  business: 'building',
+  property: 'home',
+  vehicle: 'car',
+  personal: 'user',
+};
+
 interface MobileSettingsProps {
   onBack: () => void;
 }
 
 export function MobileSettings({ onBack }: MobileSettingsProps) {
-  const { state, dispatch } = useStore();
+  const { user } = useUser();
+  const { signOut } = useClerk();
+  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const entities = useQuery(
+    api.entities.listByWorkspace,
+    workspace ? { workspaceId: workspace._id } : "skip",
+  );
+  const createEntity = useMutation(api.entities.create);
+  const archiveEntity = useMutation(api.entities.archive);
+
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [sub, setSub] = useState('');
   const [type, setType] = useState<typeof ENTITY_TYPES[number]>('business');
 
-  function handleAdd() {
-    if (!name.trim()) return;
-    const entity: Entity = {
-      id: `e-${Date.now()}`,
+  const initials = user?.fullName
+    ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : '?';
+
+  async function handleAdd() {
+    if (!name.trim() || !workspace) return;
+    await createEntity({
+      workspaceId: workspace._id,
+      kind: type,
       name: name.trim(),
-      type,
-      sub: sub.trim(),
-      icon: type === 'business' ? 'building' : type === 'property' ? 'home' : type === 'vehicle' ? 'car' : 'user',
-      color: ENTITY_COLORS[state.entities.length % ENTITY_COLORS.length],
-      count: 0,
-      info: {},
-    };
-    dispatch({ type: 'ADD_ENTITY', entity });
+      subtitle: sub.trim() || undefined,
+      icon: ICON_MAP[type] || 'building',
+      color: ENTITY_COLORS[(entities?.length ?? 0) % ENTITY_COLORS.length],
+    });
     setName('');
     setSub('');
     setAdding(false);
@@ -56,24 +73,40 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
           background: '#fff', borderRadius: 12, padding: 16,
           display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          <div style={{
-            width: 50, height: 50, borderRadius: 99, background: 'oklch(0.85 0.04 50)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 18, fontWeight: 700, color: 'var(--ink2)',
-          }}>JC</div>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>Julia Chen</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>julia@inbox.secretary.app</div>
+          {user?.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={user.imageUrl} alt="" style={{
+              width: 50, height: 50, borderRadius: 99, objectFit: 'cover',
+            }} />
+          ) : (
+            <div style={{
+              width: 50, height: 50, borderRadius: 99, background: 'oklch(0.85 0.04 50)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, fontWeight: 700, color: 'var(--ink2)',
+            }}>{initials}</div>
+          )}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{user?.fullName ?? 'Loading...'}</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{user?.primaryEmailAddress?.emailAddress ?? ''}</div>
           </div>
         </div>
       </div>
 
+      {/* Sign out */}
+      <div style={{ padding: '0 16px 8px' }}>
+        <button onClick={() => signOut({ redirectUrl: '/' })} style={{
+          width: '100%', padding: '12px 0', borderRadius: 12, border: 0,
+          background: '#fff', color: 'oklch(0.55 0.20 25)', fontSize: 15,
+          fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
+        }}>Sign out</button>
+      </div>
+
       {/* Entities */}
-      <ListGroup header={`Entities · ${state.entities.length}`}>
-        {state.entities.map((e, i) => (
-          <div key={e.id} style={{
+      <ListGroup header={`Entities · ${entities?.length ?? 0}`}>
+        {(entities ?? []).map((e, i) => (
+          <div key={e._id} style={{
             display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-            borderBottom: i === state.entities.length - 1 && !adding ? 'none' : '0.5px solid var(--hair)',
+            borderBottom: i === (entities?.length ?? 0) - 1 && !adding ? 'none' : '0.5px solid var(--hair)',
           }}>
             <div style={{
               width: 32, height: 32, borderRadius: 8, background: e.color, color: '#fff',
@@ -81,9 +114,9 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
             }}>{getIcon(e.icon, 16, '#fff')}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{e.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{e.sub}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{e.subtitle}</div>
             </div>
-            <button onClick={() => dispatch({ type: 'REMOVE_ENTITY', id: e.id })} style={{
+            <button onClick={() => archiveEntity({ entityId: e._id })} style={{
               background: 'transparent', border: 0, cursor: 'pointer',
               fontSize: 13, color: 'oklch(0.55 0.20 25)', fontWeight: 500, fontFamily: 'var(--font)',
             }}>Remove</button>
@@ -122,38 +155,6 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
           </div>
         )}
       </ListGroup>
-
-      {/* Preferences */}
-      <ListGroup header="Preferences">
-        <ToggleRow label="Push notifications" sub="Due dates & new captures" defaultOn />
-        <ToggleRow label="Dark mode" sub="Follow system setting" last />
-      </ListGroup>
-    </div>
-  );
-}
-
-function ToggleRow({ label, sub, defaultOn = false, last = false }: { label: string; sub: string; defaultOn?: boolean; last?: boolean }) {
-  const [on, setOn] = useState(defaultOn);
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-      borderBottom: last ? 'none' : '0.5px solid var(--hair)',
-    }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{label}</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{sub}</div>
-      </div>
-      <button onClick={() => setOn(!on)} style={{
-        width: 51, height: 31, borderRadius: 16, border: 0, cursor: 'pointer',
-        background: on ? 'oklch(0.60 0.17 145)' : 'rgba(120,120,128,0.16)',
-        position: 'relative', transition: 'background 0.2s',
-      }}>
-        <span style={{
-          position: 'absolute', top: 3, left: on ? 23 : 3,
-          width: 25, height: 25, borderRadius: 99, background: '#fff',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
-        }} />
-      </button>
     </div>
   );
 }

@@ -1,12 +1,15 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Ic } from '@/components/icons';
+import { askSecretary } from '@/lib/assistant-client';
+import { useStore } from '@/lib/store';
 
 export function DesktopAsk() {
+  const { state, dispatch } = useStore();
   const [q, setQ] = useState('');
+  const [sending, setSending] = useState(false);
   const [history, setHistory] = useState([
-    { q: "What's due this week?", a: 'Three things: parking ticket (Mercedes) £65 by 14 May, council tax (Plaistow flat) £214 by 28 May, business rates (Norbury) £412 by 31 May.' },
+    { q: "What's due this week?", a: 'Three things: parking ticket (Mercedes) £65 by 14 May, council tax (Plaistow flat) £214 by 28 May, business rates (Norbury) £412 by 31 May.', source: 'local' },
   ]);
   const suggestions = [
     "What's due this week?",
@@ -16,11 +19,21 @@ export function DesktopAsk() {
     'Total spent on rates this year',
   ];
 
-  function ask(text?: string) {
+  async function ask(text?: string) {
     const t = text || q;
-    if (!t.trim()) return;
-    setHistory(h => [...h, { q: t, a: 'Looking…' }]);
+    if (!t.trim() || sending) return;
+    setSending(true);
+    const pendingIndex = history.length;
+    setHistory(h => [...h, { q: t, a: 'Looking...', source: 'local' }]);
     setQ('');
+    const reply = await askSecretary(t, state);
+    if (reply.usageEvent) {
+      dispatch({ type: 'ADD_USAGE_EVENT', event: reply.usageEvent });
+    }
+    setHistory(h => h.map((entry, index) => (
+      index === pendingIndex ? { q: t, a: reply.text, source: reply.source } : entry
+    )));
+    setSending(false);
   }
 
   return (
@@ -33,7 +46,10 @@ export function DesktopAsk() {
           <div style={{
             background: '#FAF9F5', border: '0.5px solid var(--sep)', borderRadius: 10, padding: 14,
             fontSize: 14, color: 'var(--ink)', lineHeight: 1.5,
-          }}>{h.a}</div>
+          }}>
+            {h.a}
+            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>{h.source === 'openrouter' ? 'OpenRouter · Gemini 2.5 Flash' : 'Local fallback'}</div>
+          </div>
         </div>
       ))}
 
@@ -53,11 +69,11 @@ export function DesktopAsk() {
             }}>{s}</button>
           ))}
           <div style={{ flex: 1 }}></div>
-          <button onClick={() => ask()} style={{
+          <button onClick={() => ask()} disabled={sending} style={{
             padding: '5px 14px', borderRadius: 7,
-            background: 'var(--accent)', color: '#fff', border: 0, cursor: 'pointer',
+            background: sending ? 'var(--muted2)' : 'var(--accent)', color: '#fff', border: 0, cursor: sending ? 'default' : 'pointer',
             fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font)',
-          }}>Ask ↵</button>
+          }}>{sending ? 'Asking' : 'Ask ↵'}</button>
         </div>
       </div>
     </div>

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useSelectedItem } from '../layout';
 import { CalendarView } from '@/components/mobile/screens/calendar';
@@ -10,11 +9,9 @@ import { PageHeader } from '@/components/desktop/page-header';
 
 export default function CalendarPage() {
   const { state } = useStore();
-  const router = useRouter();
-  const { selectedItemId, setSelectedItemId } = useSelectedItem();
+  const { setSelectedItemId } = useSelectedItem();
   const [search, setSearch] = useState('');
   const ent = Object.fromEntries(state.entities.map(e => [e.id, e]));
-  const dueSoon = state.items.filter(i => i.status === 'due_soon' || i.status === 'overdue').length;
 
   return (
     <>

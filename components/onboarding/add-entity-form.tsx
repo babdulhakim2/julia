@@ -13,10 +13,17 @@ const TYPE_PRESETS: Record<string, { icon: string; color: string; subPlaceholder
 export { TYPE_PRESETS };
 
 interface AddEntityFormProps {
-  value: { type: string; name: string; sub: string; info: Record<string, string> };
-  onChange: (v: any) => void;
+  value: AddEntityFormValue;
+  onChange: (v: AddEntityFormValue) => void;
   onCancel: () => void;
   onCommit: () => void;
+}
+
+export interface AddEntityFormValue {
+  type: string;
+  name: string;
+  sub: string;
+  info: Record<string, string>;
 }
 
 export function AddEntityForm({ value, onChange, onCancel, onCommit }: AddEntityFormProps) {

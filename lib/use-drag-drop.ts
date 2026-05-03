@@ -56,6 +56,7 @@ export function DragDropProvider({ children, onDrop }: DragDropProviderProps) {
   const rafRef = useRef<number>(0);
   const phaseRef = useRef<'idle' | 'dragging'>('idle');
   const itemRef = useRef<DragItem | null>(null);
+  const tickRef = useRef<() => void>(() => {});
 
   const hitTest = useCallback(() => {
     const { x, y } = posRef.current;
@@ -79,8 +80,12 @@ export function DragDropProvider({ children, onDrop }: DragDropProviderProps) {
       position: { ...posRef.current },
       overFolderId,
     }));
-    rafRef.current = requestAnimationFrame(tick);
+    rafRef.current = requestAnimationFrame(tickRef.current);
   }, [hitTest]);
+
+  useEffect(() => {
+    tickRef.current = tick;
+  }, [tick]);
 
   const startDrag = useCallback((item: DragItem, x: number, y: number) => {
     posRef.current = { x, y };
@@ -93,8 +98,8 @@ export function DragDropProvider({ children, onDrop }: DragDropProviderProps) {
       dropSuccessFolderId: null,
       phase: 'dragging',
     });
-    rafRef.current = requestAnimationFrame(tick);
-  }, [tick]);
+    rafRef.current = requestAnimationFrame(tickRef.current);
+  }, []);
 
   const updatePosition = useCallback((x: number, y: number) => {
     posRef.current = { x, y };
@@ -179,9 +184,7 @@ export function DragDropProvider({ children, onDrop }: DragDropProviderProps) {
 
 // Floating preview card rendered via portal
 function FloatingPreview({ title, x, y }: { title: string; x: number; y: number }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return null;
+  if (typeof document === 'undefined') return null;
 
   return createPortal(
     React.createElement('div', {

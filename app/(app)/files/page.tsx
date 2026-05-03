@@ -4,7 +4,6 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { EntitiesList } from '@/components/mobile/screens/entities-list';
 import { useStore } from '@/lib/store';
-import { useSelectedItem } from '../layout';
 import { PageHeader } from '@/components/desktop/page-header';
 import { getIcon } from '@/components/icons';
 import { useState } from 'react';
@@ -12,7 +11,6 @@ import { useState } from 'react';
 export default function FilesPage() {
   const { state } = useStore();
   const router = useRouter();
-  const { setSelectedItemId } = useSelectedItem();
   const [search, setSearch] = useState('');
 
   return (

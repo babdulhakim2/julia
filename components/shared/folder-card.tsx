@@ -10,10 +10,9 @@ interface FolderCardProps {
   color?: string;
   itemCount: number;
   onClick: () => void;
-  onDropItem?: (itemId: string, folderId: string) => void;
 }
 
-export function FolderCard({ id, name, color, itemCount, onClick, onDropItem }: FolderCardProps) {
+export function FolderCard({ id, name, color, itemCount, onClick }: FolderCardProps) {
   const ref = useRef<HTMLButtonElement>(null);
   const { state, registerFolder, unregisterFolder } = useDragDrop();
   const isDragging = state.phase === 'dragging';
