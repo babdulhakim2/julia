@@ -1,6 +1,6 @@
 import type { StoreData } from './store';
 
-const STORE_KEY = 'secretary-store';
+const STORE_KEY = 'julia-store';
 
 function isBrowser() {
   return typeof window !== 'undefined';

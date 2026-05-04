@@ -25,9 +25,10 @@ interface CalendarProps {
   items: Item[];
   ent: Record<string, Entity>;
   onSelect: (id: string) => void;
+  onDocumentPreview?: (documentId: string) => void;
 }
 
-export function DesktopCalendar({ items, ent, onSelect }: CalendarProps) {
+export function DesktopCalendar({ items, ent, onSelect, onDocumentPreview }: CalendarProps) {
   const { state, dispatch } = useStore();
   const [month, setMonth] = useState(() => startOfMonth(new Date(`${TODAY}T12:00:00`)));
   const [selectedDate, setSelectedDate] = useState(TODAY);
@@ -96,8 +97,8 @@ export function DesktopCalendar({ items, ent, onSelect }: CalendarProps) {
   }
 
   return (
-    <div style={{ padding: '16px 24px 30px', display: 'grid', gridTemplateColumns: 'minmax(520px, 1fr) 320px', gap: 18, minHeight: 0 }}>
-      <section>
+    <div style={{ padding: '16px 24px 30px', display: 'flex', flexWrap: 'wrap', gap: 18, minHeight: 0, alignItems: 'flex-start' }}>
+      <section style={{ flex: '1 1 420px', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <button onClick={() => setAddDate(selectedDate)} style={{
             display: 'flex', alignItems: 'center', gap: 6,
@@ -138,19 +139,20 @@ export function DesktopCalendar({ items, ent, onSelect }: CalendarProps) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
             {monthGrid(month).map((cell, index) => {
               if (!cell.date || cell.day === null) {
-                return <div key={cell.key} style={{ minHeight: 104, borderRight: (index + 1) % 7 === 0 ? 0 : '0.5px solid var(--hair)', borderBottom: '0.5px solid var(--hair)', background: '#FAF9F5' }} />;
+                return <div key={cell.key} style={{ minHeight: 88, borderRight: (index + 1) % 7 === 0 ? 0 : '0.5px solid var(--hair)', borderBottom: '0.5px solid var(--hair)', background: '#FAF9F5' }} />;
               }
               const dayEntries = entriesByDate[cell.date] ?? [];
               const selected = cell.date === selectedDate;
               const isToday = cell.date === TODAY;
               return (
                 <button key={cell.key} onClick={() => setSelectedDate(cell.date!)} style={{
-                  minHeight: 104, padding: 9, border: 0,
+                  minHeight: 88, padding: 9, border: 0,
                   borderRight: (index + 1) % 7 === 0 ? 0 : '0.5px solid var(--hair)',
                   borderBottom: '0.5px solid var(--hair)',
                   background: selected ? 'var(--accent-soft)' : '#fff',
                   cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font)',
                   display: 'flex', flexDirection: 'column', gap: 6,
+                  overflow: 'hidden',
                 }}>
                   <div style={{
                     width: 24, height: 24, borderRadius: 12,
@@ -159,20 +161,15 @@ export function DesktopCalendar({ items, ent, onSelect }: CalendarProps) {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 12.5, fontWeight: selected || isToday ? 700 : 600,
                   }}>{cell.day}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0 }}>
-                    {dayEntries.slice(0, 3).map(entry => {
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 16, flexWrap: 'wrap', overflow: 'hidden' }}>
+                    {dayEntries.slice(0, 4).map(entry => {
                       const entity = ent[entry.entityId ?? ''];
                       return (
-                        <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                          <span style={{ width: 5, height: 5, borderRadius: 99, background: entity?.color ?? 'var(--muted)', flexShrink: 0 }} />
-                          <span style={{ fontSize: 11.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {entry.title}
-                          </span>
-                        </div>
+                        <span key={entry.id} title={entry.title} style={{ width: 6, height: 6, borderRadius: 99, background: entity?.color ?? 'var(--muted)', flexShrink: 0 }} />
                       );
                     })}
-                    {dayEntries.length > 3 && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>+{dayEntries.length - 3} more</div>
+                    {dayEntries.length > 4 && (
+                      <span style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700, lineHeight: 1 }}>+{dayEntries.length - 4}</span>
                     )}
                   </div>
                 </button>
@@ -182,7 +179,7 @@ export function DesktopCalendar({ items, ent, onSelect }: CalendarProps) {
         </div>
       </section>
 
-      <aside style={{ borderLeft: '0.5px solid var(--sep)', paddingLeft: 18, minWidth: 0 }}>
+      <aside style={{ borderLeft: '0.5px solid var(--sep)', paddingLeft: 18, minWidth: 240, maxWidth: 320, flex: '1 1 280px' }}>
         <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
           {new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         </div>
@@ -198,11 +195,17 @@ export function DesktopCalendar({ items, ent, onSelect }: CalendarProps) {
               <div key={entry.id} style={{ border: '0.5px solid var(--sep)', borderRadius: 8, background: '#FAF9F5', padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
                   <span style={{ marginTop: 5, width: 6, height: 6, borderRadius: 99, background: entity?.color ?? 'var(--muted)', flexShrink: 0 }} />
-                  <button onClick={() => entry.itemId && onSelect(entry.itemId)} style={{
+                  <button onClick={() => {
+                    if (entry.documentId && onDocumentPreview) onDocumentPreview(entry.documentId);
+                    else if (entry.itemId) onSelect(entry.itemId);
+                  }} style={{
                     flex: 1, minWidth: 0, background: 'transparent', border: 0, padding: 0,
-                    textAlign: 'left', cursor: entry.itemId ? 'pointer' : 'default', fontFamily: 'var(--font)',
+                    textAlign: 'left', cursor: entry.itemId || entry.documentId ? 'pointer' : 'default', fontFamily: 'var(--font)',
                   }}>
-                    <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 700, lineHeight: 1.3 }}>{entry.title}</div>
+                    <div style={{
+                      fontSize: 13.5, color: 'var(--ink)', fontWeight: 700, lineHeight: 1.3,
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                    }}>{entry.title}</div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
                       {entity?.name ?? 'No entity'} · {entry.amount ? `£${entry.amount.toLocaleString()}` : entry.type}
                     </div>

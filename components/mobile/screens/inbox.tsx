@@ -1,6 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { useUser } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { fmtDate } from '@/lib/utils';
 import { Ic } from '@/components/icons';
@@ -10,7 +12,8 @@ import { Row } from '@/components/ui/row';
 import { Btn } from '@/components/ui/button';
 import { NavBar } from '@/components/ui/nav-bar';
 import { EntityChip } from '@/components/ui/entity-chip';
-import { DocPreview } from '@/components/ui/doc-preview';
+import { DocumentThumb } from '@/components/shared/document-thumb';
+import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 
 interface InboxViewProps {
   onOpenItem: (id: string) => void;
@@ -19,25 +22,87 @@ interface InboxViewProps {
 }
 
 export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewProps) {
+  const { user } = useUser();
+  const router = useRouter();
   const { state } = useStore();
   const { items, entities } = state;
+  const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
+
+  // Dynamic date and stats
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const in7 = new Date(now); in7.setDate(in7.getDate() + 7);
+  const todayStr = now.toISOString().slice(0, 10);
+  const in7str = in7.toISOString().slice(0, 10);
+
   const review = items.filter(i => i.status === 'needs_review');
-  const dueSoon = items.filter(i => i.status === 'due_soon' || i.status === 'overdue');
-  const upcoming = items.filter(i => i.status === 'scheduled');
+  const overdue = items.filter(i => i.status === 'overdue' || (i.dueDate !== undefined && i.dueDate < todayStr && i.status !== 'done'));
+  const dueSoon = items
+    .filter(i =>
+      i.status !== 'done' && (
+        i.status === 'overdue' ||
+        i.status === 'due_soon' ||
+        (i.dueDate !== undefined && i.dueDate <= in7str)
+      ),
+    )
+    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+  const upcoming = items
+    .filter(i => i.status === 'scheduled' && (!i.dueDate || i.dueDate > in7str))
+    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+  const drafts = items.filter(i => i.drafted || i.status === 'drafting');
   const entById = Object.fromEntries(entities.map(e => [e.id, e]));
+
+  const dueIn7 = items.filter(i => i.dueDate && i.dueDate >= todayStr && i.dueDate <= in7str && i.status !== 'done');
+  const totalDue7 = dueIn7.reduce((s, i) => s + (i.amount || 0), 0);
+
+  // User initials
+  const initials = user?.fullName
+    ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : '?';
+
+  const subline = review.length > 0
+    ? `${dateStr} · ${review.length} needs your eye`
+    : dateStr;
+
+  function handleOpenItem(id: string) {
+    const item = items.find(i => i.id === id);
+    if (item?.convexDocumentId) {
+      setPreviewDocumentId(item.convexDocumentId);
+    } else {
+      onOpenItem(id);
+    }
+  }
 
   return (
     <div style={{ paddingBottom: 120 }}>
       <NavBar
         large
         title="Inbox"
-        sub="Saturday, 2 May · 3 needs your eye"
+        sub={subline}
         trailing={
-          <button style={{
-            width: 32, height: 32, borderRadius: 16, background: '#E9E9EE',
-            border: 0, color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            fontFamily: 'var(--font)',
-          }}>JC</button>
+          <button
+            onClick={() => router.push('/settings')}
+            aria-label="Open profile settings"
+            style={{
+              width: 36, height: 36, borderRadius: 18, border: 0,
+              background: 'transparent', padding: 2, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            {user?.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={user.imageUrl} alt="" style={{
+                width: 32, height: 32, borderRadius: 16, objectFit: 'cover',
+              }} />
+            ) : (
+              <span style={{
+              width: 32, height: 32, borderRadius: 16, background: '#E9E9EE',
+              color: 'var(--ink)', fontSize: 13, fontWeight: 600,
+              fontFamily: 'var(--font)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{initials}</span>
+            )}
+          </button>
         }
       />
 
@@ -52,11 +117,11 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
             {Ic.sparkle(12, 'rgba(255,255,255,0.55)')} Your week
           </div>
           <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.4, marginTop: 8, lineHeight: 1.25, fontFamily: 'var(--font-display)' }}>
-            <span style={{ color: '#fff' }}>£547</span>
+            <span style={{ color: '#fff' }}>{totalDue7 > 0 ? `£${totalDue7.toLocaleString()}` : 'Nothing'}</span>
             <span style={{ color: 'rgba(255,255,255,0.5)' }}> due in the next 7 days, </span>
-            <span style={{ color: '#fff' }}>1 overdue</span>
+            <span style={{ color: '#fff' }}>{overdue.length} overdue</span>
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>. </span>
-            <span style={{ color: '#fff' }}>2 drafts</span>
+            <span style={{ color: '#fff' }}>{drafts.length} draft{drafts.length !== 1 ? 's' : ''}</span>
             <span style={{ color: 'rgba(255,255,255,0.5)' }}> waiting on you.</span>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
@@ -74,13 +139,13 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
       {review.length > 0 && (
         <ListGroup header={`Needs your eye · ${review.length}`}>
           {review.map((it, i) => (
-            <div key={it.id} onClick={() => onOpenItem(it.id)} style={{
+            <div key={it.id} onClick={() => handleOpenItem(it.id)} style={{
               padding: 14, cursor: 'pointer',
               borderBottom: i === review.length - 1 ? 'none' : '0.5px solid var(--hair)',
             }}>
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ width: 56, height: 72, flexShrink: 0 }}>
-                  <DocPreview kind={it.preview} height={72} />
+                  <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview} height={72} title={it.title} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -89,7 +154,7 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
                   </div>
                   <div style={{ fontSize: 15, color: 'var(--ink)', fontWeight: 500, marginTop: 6, lineHeight: 1.3 }}>{it.title}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                    Couldn&apos;t tell which entity — tap to assign
+                    {it.entity && entById[it.entity] ? entById[it.entity].name : 'Tap to review and assign'}
                   </div>
                 </div>
               </div>
@@ -99,50 +164,83 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
       )}
 
       {/* Due soon / overdue */}
-      <ListGroup header={`Due this week · ${dueSoon.length}`}>
-        {dueSoon.map((it, i) => {
-          const e = entById[it.entity || ''];
-          return (
-            <Row key={it.id}
-              onClick={() => onOpenItem(it.id)}
-              last={i === dueSoon.length - 1}
-              icon={<span style={{ width: 8, height: 8, borderRadius: 99, background: e?.color }} />}
-              iconBg={e?.color ? 'transparent' : 'var(--accent-soft)'}
-              title={it.title}
-              sub={`${e?.name || 'Unassigned'} · ${it.type}`}
-              value={it.amount ? `£${it.amount}` : undefined}
-              valueSub={fmtDate(it.dueDate)}
-            />
-          );
-        })}
-      </ListGroup>
+      {dueSoon.length > 0 && (
+        <ListGroup header={`Due this week · ${dueSoon.length}`}>
+          {dueSoon.map((it, i) => {
+            const e = entById[it.entity || ''];
+            return (
+              <Row key={it.id}
+                onClick={() => handleOpenItem(it.id)}
+                last={i === dueSoon.length - 1}
+                icon={<span style={{ width: 8, height: 8, borderRadius: 99, background: e?.color }} />}
+                iconBg={e?.color ? 'transparent' : 'var(--accent-soft)'}
+                title={it.title}
+                sub={`${e?.name || 'Unassigned'} · ${it.type}`}
+                value={it.amount ? `£${it.amount}` : undefined}
+                valueSub={fmtDate(it.dueDate)}
+              />
+            );
+          })}
+        </ListGroup>
+      )}
 
       {/* Upcoming */}
-      <ListGroup header="Upcoming">
-        {upcoming.map((it, i) => {
-          const e = entById[it.entity || ''];
-          return (
-            <Row key={it.id}
-              onClick={() => onOpenItem(it.id)}
-              last={i === upcoming.length - 1}
-              icon={<span style={{ width: 8, height: 8, borderRadius: 99, background: e?.color }} />}
-              iconBg="transparent"
-              title={it.title}
-              sub={`${e?.name} · ${it.type}`}
-              value={it.amount ? `£${it.amount}` : '—'}
-              valueSub={fmtDate(it.dueDate)}
-            />
-          );
-        })}
-      </ListGroup>
+      {upcoming.length > 0 && (
+        <ListGroup header="Upcoming">
+          {upcoming.map((it, i) => {
+            const e = entById[it.entity || ''];
+            return (
+              <Row key={it.id}
+                onClick={() => handleOpenItem(it.id)}
+                last={i === upcoming.length - 1}
+                icon={<span style={{ width: 8, height: 8, borderRadius: 99, background: e?.color }} />}
+                iconBg="transparent"
+                title={it.title}
+                sub={`${e?.name || 'Unassigned'} · ${it.type}`}
+                value={it.amount ? `£${it.amount}` : '—'}
+                valueSub={fmtDate(it.dueDate)}
+              />
+            );
+          })}
+        </ListGroup>
+      )}
+
+      {/* Empty state */}
+      {items.filter(i => i.status !== 'done').length === 0 && (
+        <div style={{ padding: '32px 16px' }}>
+          <div style={{
+            background: '#fff', border: '0.5px solid var(--hair)', borderRadius: 14,
+            padding: '28px 20px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>&#128203;</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
+              No documents yet
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+              Capture or upload something to get started.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick entity jump */}
-      <div style={{ marginTop: 24, padding: '0 16px 6px', fontSize: 13, color: 'var(--muted)',
-        textTransform: 'uppercase', letterSpacing: 0.4 }}>Jump to</div>
-      <div className="no-scrollbar" style={{ paddingLeft: 16, paddingRight: 16, display: 'flex', gap: 8,
-        overflowX: 'auto' }}>
-        {entities.map(e => <EntityChip key={e.id} entity={e} onClick={() => onOpenEntity(e.id)} />)}
-      </div>
+      {entities.length > 0 && (
+        <>
+          <div style={{ marginTop: 24, padding: '0 16px 6px', fontSize: 13, color: 'var(--muted)',
+            textTransform: 'uppercase', letterSpacing: 0.4 }}>Jump to</div>
+          <div className="no-scrollbar" style={{ paddingLeft: 16, paddingRight: 16, display: 'flex', gap: 8,
+            overflowX: 'auto' }}>
+            {entities.map(e => <EntityChip key={e.id} entity={e} onClick={() => onOpenEntity(e.id)} />)}
+          </div>
+        </>
+      )}
+
+      {previewDocumentId && (
+        <DocumentPreviewModal
+          documentId={previewDocumentId}
+          onClose={() => setPreviewDocumentId(null)}
+        />
+      )}
     </div>
   );
 }

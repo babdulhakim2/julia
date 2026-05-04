@@ -2,9 +2,12 @@
 
 import React, { useState } from 'react';
 import { useUser, useClerk } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { getIcon } from '@/components/icons';
+import { DeleteEntityModal } from '@/components/shared/delete-entity-modal';
 
 const ENTITY_TYPES = ['business', 'property', 'vehicle', 'personal'] as const;
 const ENTITY_COLORS = [
@@ -22,18 +25,19 @@ const ICON_MAP: Record<string, string> = {
 export function DesktopSettings() {
   const { user } = useUser();
   const { signOut } = useClerk();
+  const router = useRouter();
   const workspace = useQuery(api.workspaces.getMyWorkspace);
   const entities = useQuery(
     api.entities.listByWorkspace,
     workspace ? { workspaceId: workspace._id } : "skip",
   );
   const createEntity = useMutation(api.entities.create);
-  const archiveEntity = useMutation(api.entities.archive);
 
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [sub, setSub] = useState('');
   const [type, setType] = useState<typeof ENTITY_TYPES[number]>('business');
+  const [deleteEntityId, setDeleteEntityId] = useState<Id<"entities"> | null>(null);
 
   const initials = user?.fullName
     ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -55,7 +59,7 @@ export function DesktopSettings() {
   }
 
   return (
-    <div style={{ padding: '20px 24px 40px', maxWidth: 600 }}>
+    <div style={{ padding: '24px 32px 40px', maxWidth: 800 }}>
       {/* Profile */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
         {user?.imageUrl ? (
@@ -96,17 +100,15 @@ export function DesktopSettings() {
             background: '#FAF9F5', borderRadius: 10, padding: 14, marginBottom: 12,
             border: '0.5px solid var(--sep)',
           }}>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Entity name"
-                style={{ flex: 1, padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', outline: 'none' }} />
+                style={{ flex: '1 1 180px', padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', outline: 'none' }} />
+              <input value={sub} onChange={e => setSub(e.target.value)} placeholder="Description (optional)"
+                style={{ flex: '1 1 180px', padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', outline: 'none' }} />
               <select value={type} onChange={e => setType(e.target.value as typeof ENTITY_TYPES[number])}
-                style={{ padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', background: '#fff' }}>
+                style={{ flex: '0 1 150px', padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', background: '#fff' }}>
                 {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input value={sub} onChange={e => setSub(e.target.value)} placeholder="Description (optional)"
-                style={{ flex: 1, padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', outline: 'none' }} />
               <button onClick={handleAdd} style={{
                 padding: '7px 14px', borderRadius: 7, background: 'var(--ink)', color: '#fff',
                 border: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font)',
@@ -129,14 +131,21 @@ export function DesktopSettings() {
                 <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{e.name}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{e.subtitle}</div>
               </div>
-              <button onClick={() => archiveEntity({ entityId: e._id })} style={{
+              <button onClick={() => setDeleteEntityId(e._id)} style={{
                 background: 'transparent', border: 0, cursor: 'pointer', padding: 4,
                 fontSize: 12, color: 'oklch(0.55 0.20 25)', fontWeight: 500, fontFamily: 'var(--font)',
-              }}>Remove</button>
+              }}>Delete</button>
             </div>
           ))}
         </div>
       </div>
+      {deleteEntityId && (
+        <DeleteEntityModal
+          entityId={deleteEntityId}
+          onClose={() => setDeleteEntityId(null)}
+          onDeleted={() => { setDeleteEntityId(null); router.push('/files'); }}
+        />
+      )}
     </div>
   );
 }

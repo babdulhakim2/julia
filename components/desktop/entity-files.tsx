@@ -14,6 +14,7 @@ import { AutoOrganizeModal } from '@/components/shared/auto-organize-modal';
 import { computeAutoOrganize } from '@/lib/auto-organize';
 import { Toast } from '@/components/ui/toast';
 import { STATUS_META } from '@/lib/data';
+import { DocumentThumb } from '@/components/shared/document-thumb';
 
 interface EntityFilesProps {
   entity: Entity;
@@ -112,9 +113,10 @@ function DraggableItemRow({ item, selected, onSelect }: {
     >
       <div style={{
         width: 22, height: 28, borderRadius: 4, background: '#fff',
-        border: '0.5px solid var(--sep)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>{Ic.doc(12, 'var(--muted)')}</div>
+        border: '0.5px solid var(--sep)', overflow: 'hidden',
+      }}>
+        <DocumentThumb documentId={item.convexDocumentId} fallbackKind={item.preview} height={28} title={item.title} />
+      </div>
       <div style={{ minWidth: 0, paddingRight: 14 }}>
         <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>{item.issuer || item.type}</div>
@@ -161,7 +163,11 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
     (period === 'custom'
       ? (customStart && customEnd ? inDateRange(i.date, customStart, customEnd) : true)
       : inPeriod(i.date, period)) &&
-    (search === '' || i.title.toLowerCase().includes(search.toLowerCase()) || (i.issuer || '').toLowerCase().includes(search.toLowerCase()))
+    (search === '' ||
+      i.title.toLowerCase().includes(search.toLowerCase()) ||
+      (i.issuer || '').toLowerCase().includes(search.toLowerCase()) ||
+      (i.ref || '').toLowerCase().includes(search.toLowerCase()) ||
+      i.tags?.some(tag => tag.toLowerCase().includes(search.toLowerCase())))
   );
   const byCat: Record<string, Item[]> = {};
   CATEGORIES.forEach(c => (byCat[c.id] = []));
@@ -224,6 +230,26 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
   return (
     <DragDropProvider onDrop={handleDrop}>
       <div>
+        {!activeFolderId && entity?.info && Object.keys(entity.info).length > 0 && (
+          <div style={{ padding: '14px 24px 0' }}>
+            <div style={{
+              display: 'flex', alignItems: 'stretch', gap: 8, flexWrap: 'wrap',
+              background: '#FAF9F5', border: '0.5px solid var(--sep)', borderRadius: 10,
+              padding: 10,
+            }}>
+              {Object.entries(entity.info).slice(0, 8).map(([k, v]) => (
+                <div key={k} style={{
+                  padding: '6px 9px', borderRadius: 7, background: '#fff',
+                  border: '0.5px solid var(--hair)', minWidth: 120,
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{k}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Stats strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
           padding: '14px 24px 0', gap: 14 }}>
@@ -406,25 +432,6 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
               </>
             )}
           </>
-        )}
-
-        {/* Info card */}
-        {entity?.info && Object.keys(entity.info).length > 0 && (
-          <div style={{ padding: '20px 24px' }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>About</div>
-            <div style={{
-              background: '#FAF9F5', borderRadius: 10, padding: '4px 14px',
-              border: '0.5px solid var(--sep)',
-            }}>
-              {Object.entries(entity.info).map(([k, v], i, arr) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between',
-                  padding: '10px 0', borderBottom: i === arr.length - 1 ? 'none' : '0.5px solid var(--hair)' }}>
-                  <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{k}</span>
-                  <span style={{ fontSize: 12.5, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         )}
 
         {/* Toast */}

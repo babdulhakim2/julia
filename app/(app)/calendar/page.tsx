@@ -6,18 +6,23 @@ import { useSelectedItem } from '../layout';
 import { CalendarView } from '@/components/mobile/screens/calendar';
 import { DesktopCalendar } from '@/components/desktop/desktop-calendar';
 import { PageHeader } from '@/components/desktop/page-header';
+import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 
 export default function CalendarPage() {
   const { state } = useStore();
   const { setSelectedItemId } = useSelectedItem();
   const [search, setSearch] = useState('');
+  const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
   const ent = Object.fromEntries(state.entities.map(e => [e.id, e]));
 
   return (
     <>
       {/* Mobile */}
       <div className="lg:hidden" style={{ paddingBottom: 100 }}>
-        <CalendarView onOpenItem={(id) => setSelectedItemId(id)} />
+        <CalendarView
+          onOpenItem={(id) => setSelectedItemId(id)}
+          onDocumentPreview={setPreviewDocumentId}
+        />
       </div>
 
       {/* Desktop */}
@@ -30,9 +35,21 @@ export default function CalendarPage() {
           onCapture={() => {}}
         />
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          <DesktopCalendar items={state.items} ent={ent} onSelect={setSelectedItemId} />
+          <DesktopCalendar
+            items={state.items}
+            ent={ent}
+            onSelect={setSelectedItemId}
+            onDocumentPreview={setPreviewDocumentId}
+          />
         </div>
       </div>
+
+      {previewDocumentId && (
+        <DocumentPreviewModal
+          documentId={previewDocumentId}
+          onClose={() => setPreviewDocumentId(null)}
+        />
+      )}
     </>
   );
 }

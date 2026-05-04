@@ -213,7 +213,7 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
       }}>
         <div style={{ padding: '16px 20px', borderBottom: '0.5px solid var(--sep)',
           display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', flex: 1, fontFamily: 'var(--font-display)' }}>Add to Secretary</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', flex: 1, fontFamily: 'var(--font-display)' }}>Add to Julia</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 0, cursor: 'pointer', padding: 4 }}>{Ic.x(18, 'var(--muted)')}</button>
         </div>
 
@@ -293,7 +293,7 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
 
           <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
             <Channel2 icon={Ic.paperclip(14, 'var(--accent)')} title="WhatsApp" sub="+44 7700 900100" />
-            <Channel2 icon={Ic.doc(14, 'var(--accent)')} title="Email" sub="inbox@secretary.app" />
+            <Channel2 icon={Ic.doc(14, 'var(--accent)')} title="Email" sub="inbox@julia.app" />
             <Channel2 icon={Ic.cal(14, 'var(--accent)')} title="Drive sync" sub="Auto-import folder" />
           </div>
         </div>

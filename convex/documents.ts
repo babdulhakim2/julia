@@ -128,6 +128,19 @@ export const update = mutation({
 });
 
 /**
+ * Returns a single document by ID.
+ */
+export const getById = query({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc) throw new Error("Document not found");
+    await requireWorkspaceMember(ctx, doc.workspaceId);
+    return doc;
+  },
+});
+
+/**
  * Lists documents for a specific entity.
  */
 export const listByEntity = query({

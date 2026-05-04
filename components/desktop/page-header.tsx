@@ -28,7 +28,7 @@ export function PageHeader({ title, subtitle, search, setSearch, onCapture }: Pa
         background: 'rgba(118,118,128,0.10)', minWidth: 240,
       }}>
         {Ic.search(14, 'var(--muted)')}
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files, items, contacts…"
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files, items, entities..."
           style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontSize: 13, fontFamily: 'var(--font)', color: 'var(--ink)' }} />
         <span style={{ fontSize: 11, color: 'var(--muted2)', padding: '1px 5px',
           border: '0.5px solid var(--sep)', borderRadius: 4, fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>⌘K</span>

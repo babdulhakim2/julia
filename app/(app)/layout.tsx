@@ -13,14 +13,14 @@ import { CaptureFlow } from '@/components/mobile/capture/capture-flow';
 import { Toast } from '@/components/ui/toast';
 import { ClientRedirect } from '@/components/ui/client-redirect';
 
-const SELECTED_ITEM_KEY = 'secretary-selected-item';
+const SELECTED_ITEM_KEY = 'julia-selected-item';
 
 function loadSelectedItemId() {
-  if (typeof window === 'undefined') return 'i2';
+  if (typeof window === 'undefined') return '';
   try {
-    return localStorage.getItem(SELECTED_ITEM_KEY) || 'i2';
+    return localStorage.getItem(SELECTED_ITEM_KEY) || '';
   } catch {
-    return 'i2';
+    return '';
   }
 }
 
@@ -91,7 +91,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       preview: doc.category,
       tags: doc.tags,
     }));
-    dispatch({ type: 'UPSERT_ITEMS', items: mapped });
+    dispatch({ type: 'SET_ITEMS', items: mapped });
   }, [documents, dispatch]);
 
   // Persist selectedItemId
@@ -189,7 +189,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 const SelectedItemContext = createContext<{
   selectedItemId: string;
   setSelectedItemId: (id: string) => void;
-}>({ selectedItemId: 'i2', setSelectedItemId: () => {} });
+}>({ selectedItemId: '', setSelectedItemId: () => {} });
 
 export function useSelectedItem() {
   return useContext(SelectedItemContext);

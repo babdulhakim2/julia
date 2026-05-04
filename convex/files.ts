@@ -103,6 +103,30 @@ export const storeDocumentFile = mutation({
 });
 
 /**
+ * Lists files belonging to a document, with resolved storage URLs.
+ */
+export const listByDocumentId = query({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc) throw new Error("Document not found");
+    await requireWorkspaceMember(ctx, doc.workspaceId);
+    const files = await ctx.db
+      .query("documentFiles")
+      .withIndex("by_documentId_and_pageNumber", (q) =>
+        q.eq("documentId", args.documentId),
+      )
+      .take(50);
+    return await Promise.all(
+      files.map(async (f) => ({
+        ...f,
+        url: await ctx.storage.getUrl(f.storageId),
+      })),
+    );
+  },
+});
+
+/**
  * Returns a URL for a stored file.
  */
 export const getFileUrl = query({

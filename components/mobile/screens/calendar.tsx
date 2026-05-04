@@ -28,9 +28,10 @@ import {
 
 interface CalendarViewProps {
   onOpenItem: (id: string) => void;
+  onDocumentPreview?: (documentId: string) => void;
 }
 
-export function CalendarView({ onOpenItem }: CalendarViewProps) {
+export function CalendarView({ onOpenItem, onDocumentPreview }: CalendarViewProps) {
   const { state, dispatch } = useStore();
   const [month, setMonth] = useState(() => startOfMonth(new Date(`${TODAY}T12:00:00`)));
   const [selectedDate, setSelectedDate] = useState(TODAY);
@@ -173,10 +174,13 @@ export function CalendarView({ onOpenItem }: CalendarViewProps) {
             <div key={entry.id} style={{
               display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
               borderBottom: i === selectedEntries.length - 1 ? 'none' : '0.5px solid var(--hair)',
-              cursor: entry.itemId ? 'pointer' : 'default',
+              cursor: entry.itemId || entry.documentId ? 'pointer' : 'default',
             }}>
               <div style={{ width: 3, height: 38, borderRadius: 99, background: e?.color ?? 'var(--muted)', flexShrink: 0 }}/>
-              <div onClick={() => entry.itemId && onOpenItem(entry.itemId)} style={{ flex: 1, minWidth: 0 }}>
+              <div onClick={() => {
+                if (entry.documentId && onDocumentPreview) onDocumentPreview(entry.documentId);
+                else if (entry.itemId) onOpenItem(entry.itemId);
+              }} style={{ flex: 1, minWidth: 0, cursor: entry.itemId || entry.documentId ? 'pointer' : 'default' }}>
                 <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 600 }}>{entry.title}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{e?.name ?? 'No entity'} · {entry.amount ? `£${entry.amount}` : entry.type}</div>
               </div>

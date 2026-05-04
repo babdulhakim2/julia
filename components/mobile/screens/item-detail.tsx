@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '@/lib/store';
 import { Ic } from '@/components/icons';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -9,7 +9,8 @@ import { Row } from '@/components/ui/row';
 import { Btn } from '@/components/ui/button';
 import { NavBar } from '@/components/ui/nav-bar';
 import { NavBtn } from '@/components/ui/nav-btn';
-import { DocPreview } from '@/components/ui/doc-preview';
+import { DocumentThumb } from '@/components/shared/document-thumb';
+import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 
 interface ItemDetailProps {
   itemId: string;
@@ -18,6 +19,7 @@ interface ItemDetailProps {
 
 export function ItemDetail({ itemId, onBack }: ItemDetailProps) {
   const { state } = useStore();
+  const [previewOpen, setPreviewOpen] = useState(false);
   const it = state.items.find(i => i.id === itemId);
   const e = state.entities.find(x => x.id === it?.entity);
   if (!it) return null;
@@ -47,9 +49,16 @@ export function ItemDetail({ itemId, onBack }: ItemDetailProps) {
         <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--ink)', letterSpacing: -0.3, lineHeight: 1.2, fontFamily: 'var(--font-display)' }}>{it.title}</div>
         <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{it.type} · {e?.name}</div>
 
-        <div style={{ marginTop: 14 }}>
-          <DocPreview kind={it.preview || 'lambeth'} height={220} />
-        </div>
+        <button
+          onClick={() => it.convexDocumentId ? setPreviewOpen(true) : undefined}
+          style={{
+            marginTop: 14, width: '100%', border: 0, padding: 0, borderRadius: 10,
+            overflow: 'hidden', cursor: it.convexDocumentId ? 'pointer' : 'default',
+            background: 'transparent',
+          }}
+        >
+          <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview || 'lambeth'} height={220} title={it.title} />
+        </button>
       </div>
 
       <ListGroup header="Details">
@@ -89,6 +98,13 @@ export function ItemDetail({ itemId, onBack }: ItemDetailProps) {
         <Row icon={Ic.bell(16, 'var(--accent)')} iconBg="var(--accent-soft)" title="Reminder: 12 May, 9am" sub="2 days before due" chevron onClick={() => {}} />
         <Row icon={Ic.thumbtack(16, 'var(--accent)')} iconBg="var(--accent-soft)" title="Pin to top" chevron last onClick={() => {}} />
       </ListGroup>
+
+      {previewOpen && it.convexDocumentId && (
+        <DocumentPreviewModal
+          documentId={it.convexDocumentId}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </div>
   );
 }

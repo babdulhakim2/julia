@@ -2,12 +2,15 @@
 
 import React, { useState } from 'react';
 import { useUser, useClerk } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { getIcon, Ic } from '@/components/icons';
 import { NavBar } from '@/components/ui/nav-bar';
 import { NavBtn } from '@/components/ui/nav-btn';
 import { ListGroup } from '@/components/ui/list-group';
+import { DeleteEntityModal } from '@/components/shared/delete-entity-modal';
 
 const ENTITY_TYPES = ['business', 'property', 'vehicle', 'personal'] as const;
 const ENTITY_COLORS = [
@@ -29,18 +32,19 @@ interface MobileSettingsProps {
 export function MobileSettings({ onBack }: MobileSettingsProps) {
   const { user } = useUser();
   const { signOut } = useClerk();
+  const router = useRouter();
   const workspace = useQuery(api.workspaces.getMyWorkspace);
   const entities = useQuery(
     api.entities.listByWorkspace,
     workspace ? { workspaceId: workspace._id } : "skip",
   );
   const createEntity = useMutation(api.entities.create);
-  const archiveEntity = useMutation(api.entities.archive);
 
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [sub, setSub] = useState('');
   const [type, setType] = useState<typeof ENTITY_TYPES[number]>('business');
+  const [deleteEntityId, setDeleteEntityId] = useState<Id<"entities"> | null>(null);
 
   const initials = user?.fullName
     ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -116,10 +120,10 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
               <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{e.name}</div>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>{e.subtitle}</div>
             </div>
-            <button onClick={() => archiveEntity({ entityId: e._id })} style={{
+            <button onClick={() => setDeleteEntityId(e._id)} style={{
               background: 'transparent', border: 0, cursor: 'pointer',
               fontSize: 13, color: 'oklch(0.55 0.20 25)', fontWeight: 500, fontFamily: 'var(--font)',
-            }}>Remove</button>
+            }}>Delete</button>
           </div>
         ))}
         {adding ? (
@@ -155,6 +159,14 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
           </div>
         )}
       </ListGroup>
+
+      {deleteEntityId && (
+        <DeleteEntityModal
+          entityId={deleteEntityId}
+          onClose={() => setDeleteEntityId(null)}
+          onDeleted={() => { setDeleteEntityId(null); router.push('/files'); }}
+        />
+      )}
     </div>
   );
 }

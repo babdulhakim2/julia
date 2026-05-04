@@ -19,7 +19,7 @@ export default function FilesPage() {
       <div className="lg:hidden" style={{ paddingBottom: 100 }}>
         <EntitiesList
           onOpenEntity={(id) => router.push(`/files/${id}`)}
-          onOpenContacts={() => router.push('/contacts')}
+          onOpenSearch={() => router.push('/ask')}
           onOpenSettings={() => router.push('/settings')}
         />
       </div>
@@ -35,9 +35,13 @@ export default function FilesPage() {
         />
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-            {state.entities.filter(e =>
-              search === '' || e.name.toLowerCase().includes(search.toLowerCase())
-            ).map(e => {
+            {state.entities.filter(e => {
+              const needle = search.toLowerCase();
+              return search === '' ||
+                e.name.toLowerCase().includes(needle) ||
+                e.sub.toLowerCase().includes(needle) ||
+                Object.values(e.info).some(value => value.toLowerCase().includes(needle));
+            }).map(e => {
               const count = state.items.filter(i => i.entity === e.id).length;
               const openCount = state.items.filter(i => i.entity === e.id && i.status !== 'done').length;
               return (

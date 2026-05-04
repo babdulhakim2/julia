@@ -69,15 +69,6 @@ export interface UsageEvent {
   occurredAt: string;
 }
 
-export interface Contact {
-  id: string;
-  name: string;
-  phone: string;
-  tags: string[];
-  note: string;
-  last: string;
-}
-
 export interface Category {
   id: string;
   name: string;

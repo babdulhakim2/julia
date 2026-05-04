@@ -1,6 +1,9 @@
 'use client';
 
 import React from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { useStore } from '@/lib/store';
 import { STATUS_META } from '@/lib/data';
 
@@ -17,6 +20,83 @@ function Field({ label, value, dotColor, last }: { label: string; value?: string
         {dotColor && <span style={{ width: 8, height: 8, borderRadius: 99, background: dotColor }}></span>}
         {value}
       </span>
+    </div>
+  );
+}
+
+function DocumentPreview({ documentId }: { documentId: string }) {
+  const files = useQuery(api.files.listByDocumentId, { documentId: documentId as Id<'documents'> });
+
+  if (!files) {
+    return (
+      <div style={{
+        aspectRatio: '0.78', background: '#fff', borderRadius: 10, padding: 18,
+        border: '0.5px solid var(--sep)',
+        boxShadow: '0 1px 0 rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.05)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <div style={{ color: 'var(--muted)', fontSize: 12 }}>Loading...</div>
+      </div>
+    );
+  }
+
+  const firstFile = files[0];
+  if (!firstFile?.url) return null;
+
+  const isImage = firstFile.contentType?.startsWith('image/');
+  const isPdf = firstFile.contentType === 'application/pdf';
+
+  if (isImage) {
+    return (
+      <div style={{
+        aspectRatio: '0.78', borderRadius: 10, overflow: 'hidden',
+        border: '0.5px solid var(--sep)',
+        boxShadow: '0 1px 0 rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.05)',
+        background: '#f5f5f0',
+      }}>
+        <img src={firstFile.url} alt="Document" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+    );
+  }
+
+  if (isPdf) {
+    return (
+      <div style={{
+        aspectRatio: '0.78', borderRadius: 10, overflow: 'hidden',
+        border: '0.5px solid var(--sep)',
+        boxShadow: '0 1px 0 rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.05)',
+      }}>
+        <iframe src={firstFile.url} style={{ width: '100%', height: '100%', border: 0 }} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function PlaceholderPreview({ it }: { it: { issuer?: string; type: string; title: string; amount?: number } }) {
+  return (
+    <div style={{
+      aspectRatio: '0.78', background: '#fff', borderRadius: 10, padding: 18,
+      border: '0.5px solid var(--sep)',
+      boxShadow: '0 1px 0 rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.05)',
+      display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden',
+    }}>
+      <div style={{ fontSize: 9, color: 'var(--muted2)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        {it.issuer || it.type}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)', lineHeight: 1.2 }}>{it.title}</div>
+      <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {[1, 2, 3, 4, 5, 6].map(n => (
+          <div key={n} style={{ height: 4, background: 'oklch(0.92 0.01 80)', borderRadius: 2, width: `${65 + (n*5) % 35}%` }}></div>
+        ))}
+      </div>
+      {it.amount && (
+        <div style={{ marginTop: 'auto', padding: '8px 0 0', borderTop: '0.5px solid var(--hair)' }}>
+          <div style={{ fontSize: 9, color: 'var(--muted2)', textTransform: 'uppercase', fontWeight: 600 }}>Amount due</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)' }}>£{it.amount.toLocaleString()}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -39,28 +119,11 @@ export function DesktopInspector({ itemId }: InspectorProps) {
     <aside style={{ background: 'var(--inspector-bg)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       {/* Document preview */}
       <div style={{ padding: 18, borderBottom: '0.5px solid var(--sep)' }}>
-        <div style={{
-          aspectRatio: '0.78', background: '#fff', borderRadius: 10, padding: 18,
-          border: '0.5px solid var(--sep)',
-          boxShadow: '0 1px 0 rgba(0,0,0,0.02), 0 4px 18px rgba(0,0,0,0.05)',
-          display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden',
-        }}>
-          <div style={{ fontSize: 9, color: 'var(--muted2)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            {it.issuer || it.type}
-          </div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)', lineHeight: 1.2 }}>{it.title}</div>
-          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[1, 2, 3, 4, 5, 6].map(n => (
-              <div key={n} style={{ height: 4, background: 'oklch(0.92 0.01 80)', borderRadius: 2, width: `${65 + (n*5) % 35}%` }}></div>
-            ))}
-          </div>
-          {it.amount && (
-            <div style={{ marginTop: 'auto', padding: '8px 0 0', borderTop: '0.5px solid var(--hair)' }}>
-              <div style={{ fontSize: 9, color: 'var(--muted2)', textTransform: 'uppercase', fontWeight: 600 }}>Amount due</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)' }}>£{it.amount.toLocaleString()}</div>
-            </div>
-          )}
-        </div>
+        {it.convexDocumentId ? (
+          <DocumentPreview documentId={it.convexDocumentId} />
+        ) : (
+          <PlaceholderPreview it={it} />
+        )}
       </div>
 
       {/* Meta */}

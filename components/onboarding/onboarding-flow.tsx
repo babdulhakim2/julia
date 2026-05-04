@@ -111,7 +111,7 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
           </div>
           <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--ink)', letterSpacing: -1,
             lineHeight: 1.05, fontFamily: 'var(--font-display)' }}>
-            Hi {firstName}.<br/>I&apos;m your secretary.
+            Hi {firstName}.<br/>I&apos;m Julia.
           </div>
           <div style={{ fontSize: 17, color: 'var(--muted)', marginTop: 16, lineHeight: 1.4 }}>
             You take photos. I file, remind, and draft replies. A real human checks anything I&apos;m unsure about &mdash; within 10 minutes.
@@ -263,7 +263,7 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
               textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Or, send by</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <Channel icon={Ic.paperclip(16, 'var(--accent)')} title="WhatsApp" sub="+44 7700 900100" />
-              <Channel icon={Ic.doc(16, 'var(--accent)')} title="Email forward" sub="inbox@secretary.app" />
+              <Channel icon={Ic.doc(16, 'var(--accent)')} title="Email forward" sub="inbox@julia.app" />
               <Channel icon={Ic.mic(16, 'var(--accent)')} title="Voice notes" sub="Same WhatsApp number" />
             </div>
           </div>

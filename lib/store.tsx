@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
 import type { Entity, Item, Folder, UsageEvent } from './types';
-import { ITEMS_SEED, CATEGORIES, FOLDERS_SEED, USAGE_EVENTS_SEED } from './data';
+import { CATEGORIES } from './data';
 import { loadStore, saveStore } from './storage';
 
 export interface StoreData {
@@ -18,6 +18,7 @@ export interface StoreState extends StoreData {
 
 type Action =
   | { type: 'SET_ENTITIES'; entities: Entity[] }
+  | { type: 'SET_ITEMS'; items: Item[] }
   | { type: 'ADD_ITEM'; item: Item }
   | { type: 'UPSERT_ITEMS'; items: Item[] }
   | { type: 'REMOVE_ITEM'; id: string }
@@ -35,6 +36,8 @@ function reducer(state: StoreState, action: Action): StoreState {
   switch (action.type) {
     case 'SET_ENTITIES':
       return { ...state, entities: action.entities };
+    case 'SET_ITEMS':
+      return { ...state, items: action.items };
     case 'ADD_ITEM':
       return { ...state, items: [...state.items, action.item] };
     case 'UPSERT_ITEMS': {
@@ -111,9 +114,9 @@ function reducer(state: StoreState, action: Action): StoreState {
 
 const initialState: StoreState = {
   entities: [],
-  items: ITEMS_SEED.map(i => ({ ...i })),
-  folders: FOLDERS_SEED.map(f => ({ ...f })),
-  usageEvents: USAGE_EVENTS_SEED.map(u => ({ ...u })),
+  items: [],
+  folders: [],
+  usageEvents: [],
   hydrated: false,
 };
 
@@ -129,14 +132,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Load from localStorage on mount
   useEffect(() => {
     const saved = loadStore();
-    if (saved && saved.items) {
+    if (saved) {
       dispatch({
         type: 'HYDRATE',
         state: {
           entities: saved.entities ?? [],
-          items: saved.items,
-          folders: saved.folders ?? FOLDERS_SEED.map(f => ({ ...f })),
-          usageEvents: saved.usageEvents ?? USAGE_EVENTS_SEED.map(u => ({ ...u })),
+          items: saved.items ?? [],
+          folders: saved.folders ?? [],
+          usageEvents: saved.usageEvents ?? [],
         },
       });
       return;

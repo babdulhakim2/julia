@@ -1,13 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Entity, Item } from '@/lib/types';
 import { Ic } from '@/components/icons';
 import { StatusPill } from '@/components/ui/status-pill';
-import { DocPreview } from '@/components/ui/doc-preview';
+import { DocumentThumb } from '@/components/shared/document-thumb';
 import { ItemsTable } from './items-table';
-import { TODAY } from '@/lib/data';
+import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 
 interface DashboardProps {
   items: Item[];
@@ -21,22 +21,40 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
   const router = useRouter();
   const ent = Object.fromEntries(entities.map(e => [e.id, e]));
   const openItems = items.filter(i => i.status !== 'done');
+  const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
 
-  // Calculate hero stats
-  const today = new Date(TODAY);
+  // Calculate hero stats from live date
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
   const in7 = new Date(today);
   in7.setDate(in7.getDate() + 7);
   const in7str = in7.toISOString().slice(0, 10);
 
-  const dueIn7 = items.filter(i => i.dueDate && i.dueDate >= TODAY && i.dueDate <= in7str && i.status !== 'done');
+  const dueIn7 = items.filter(i => i.dueDate && i.dueDate >= todayStr && i.dueDate <= in7str && i.status !== 'done');
   const totalDue7 = dueIn7.reduce((s, i) => s + (i.amount || 0), 0);
-  const overdue = items.filter(i => i.status === 'overdue');
+  const overdue = items.filter(i => i.status === 'overdue' || (i.dueDate !== undefined && i.dueDate < todayStr && i.status !== 'done'));
   const drafts = items.filter(i => i.drafted || i.status === 'drafting');
 
   // Grouped sections
   const needsReview = openItems.filter(i => i.status === 'needs_review');
-  const dueThisWeek = openItems.filter(i => i.status === 'due_soon' || i.status === 'overdue');
-  const upcoming = openItems.filter(i => i.status === 'scheduled');
+  const dueThisWeek = openItems
+    .filter(i =>
+      i.status === 'overdue' ||
+      i.status === 'due_soon' ||
+      (i.dueDate !== undefined && i.dueDate <= in7str),
+    )
+    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+  const upcoming = openItems
+    .filter(i => i.status === 'scheduled' && (!i.dueDate || i.dueDate > in7str))
+    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+
+  function handlePreviewItem(item: Item) {
+    if (item.convexDocumentId) {
+      setPreviewDocumentId(item.convexDocumentId);
+    } else {
+      setSelectedItemId(item.id);
+    }
+  }
 
   return (
     <div>
@@ -81,13 +99,13 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
           </div>
           <div style={{ display: 'flex', gap: 12, overflowX: 'auto' }}>
             {needsReview.map(it => (
-              <button key={it.id} onClick={() => setSelectedItemId(it.id)} style={{
+              <button key={it.id} onClick={() => handlePreviewItem(it)} style={{
                 width: 170, flexShrink: 0, background: '#FAF9F5', borderRadius: 10, border: selectedItemId === it.id ? '1.5px solid var(--accent)' : '0.5px solid var(--sep)',
                 cursor: 'pointer', padding: 10, textAlign: 'left', fontFamily: 'var(--font)',
                 display: 'flex', flexDirection: 'column', gap: 6,
               }}>
                 <div style={{ height: 60, borderRadius: 6, overflow: 'hidden' }}>
-                  <DocPreview kind={it.preview} height={60} />
+                  <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview} height={60} title={it.title} />
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 500, lineHeight: 1.25,
                   display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as React.CSSProperties}>{it.title}</div>
@@ -108,7 +126,7 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
             {dueThisWeek.map((it, i) => {
               const e = ent[it.entity || ''];
               return (
-                <button key={it.id} onClick={() => setSelectedItemId(it.id)} style={{
+                <button key={it.id} onClick={() => handlePreviewItem(it)} style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
                   background: selectedItemId === it.id ? 'rgba(0,122,255,0.05)' : 'transparent',
                   border: 0, borderBottom: i === dueThisWeek.length - 1 ? 'none' : '0.5px solid var(--hair)',
@@ -140,7 +158,7 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
             {upcoming.map((it, i) => {
               const e = ent[it.entity || ''];
               return (
-                <button key={it.id} onClick={() => setSelectedItemId(it.id)} style={{
+                <button key={it.id} onClick={() => handlePreviewItem(it)} style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
                   background: selectedItemId === it.id ? 'rgba(0,122,255,0.05)' : 'transparent',
                   border: 0, borderBottom: i === upcoming.length - 1 ? 'none' : '0.5px solid var(--hair)',
@@ -159,13 +177,40 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
         </div>
       )}
 
-      {/* Full table */}
-      <div style={{ marginTop: 20 }}>
-        <div style={{ padding: '0 24px 8px', fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-          All open items · {openItems.length}
+      {/* Empty state */}
+      {openItems.length === 0 && (
+        <div style={{ padding: '32px 24px' }}>
+          <div style={{
+            background: '#FAF9F5', border: '0.5px solid var(--sep)', borderRadius: 14,
+            padding: '28px 20px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>&#128203;</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
+              No documents yet
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+              Capture or upload something to get started. Your dashboard will show due items, reviews, and upcoming deadlines here.
+            </div>
+          </div>
         </div>
-        <ItemsTable items={openItems} ent={ent} search={search} selectedId={selectedItemId} onSelect={setSelectedItemId} />
-      </div>
+      )}
+
+      {/* Full table */}
+      {openItems.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <div style={{ padding: '0 24px 8px', fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            All open items · {openItems.length}
+          </div>
+          <ItemsTable items={openItems} ent={ent} search={search} selectedId={selectedItemId} onSelect={setSelectedItemId} />
+        </div>
+      )}
+
+      {previewDocumentId && (
+        <DocumentPreviewModal
+          documentId={previewDocumentId}
+          onClose={() => setPreviewDocumentId(null)}
+        />
+      )}
     </div>
   );
 }

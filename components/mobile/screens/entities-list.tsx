@@ -11,11 +11,11 @@ import { Row } from '@/components/ui/row';
 
 interface EntitiesListProps {
   onOpenEntity: (id: string) => void;
-  onOpenContacts: () => void;
+  onOpenSearch: () => void;
   onOpenSettings?: () => void;
 }
 
-export function EntitiesList({ onOpenEntity, onOpenContacts, onOpenSettings }: EntitiesListProps) {
+export function EntitiesList({ onOpenEntity, onOpenSearch, onOpenSettings }: EntitiesListProps) {
   const { state } = useStore();
   return (
     <div style={{ paddingBottom: 120 }}>
@@ -43,8 +43,7 @@ export function EntitiesList({ onOpenEntity, onOpenContacts, onOpenSettings }: E
       </ListGroup>
 
       <ListGroup header="Other">
-        <Row icon={Ic.contacts(18, 'var(--accent)')} iconBg="var(--accent-soft)" title="Contacts" sub="Phonebook & customers" chevron onClick={onOpenContacts} />
-        <Row icon={Ic.search(18, 'var(--accent)')} iconBg="var(--accent-soft)" title="Search everything" sub="Bills, letters, voice notes" chevron onClick={() => {}} />
+        <Row icon={Ic.search(18, 'var(--accent)')} iconBg="var(--accent-soft)" title="Search everything" sub="Files, deadlines, uploads" chevron onClick={onOpenSearch} />
         <Row icon={Ic.dots(18, 'var(--accent)')} iconBg="var(--accent-soft)" title="Settings" sub="Profile, entities & preferences" chevron last onClick={onOpenSettings} />
       </ListGroup>
     </div>

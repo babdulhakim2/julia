@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       messages,
       maxTokens: body.maxTokens,
       temperature: body.temperature,
-      sessionId: `secretary-${task}`,
+      sessionId: `julia-${task}`,
     });
 
     return NextResponse.json({
@@ -98,7 +98,7 @@ function buildMessages(task: NonNullable<OpenRouterRouteBody["task"]>, body: Ope
       {
         role: "user" as const,
         content:
-          "Confirm OpenRouter Gemini 2.5 Flash is reachable for Secretary admin monitoring.",
+          "Confirm OpenRouter Gemini 2.5 Flash is reachable for Julia admin monitoring.",
       },
     ];
   }

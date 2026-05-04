@@ -8,7 +8,6 @@ import { Ic, getIcon } from '@/components/icons';
 import { NavBar } from '@/components/ui/nav-bar';
 import { NavBtn } from '@/components/ui/nav-btn';
 import { ListGroup } from '@/components/ui/list-group';
-import { DocPreview } from '@/components/ui/doc-preview';
 import { CatChip } from '@/components/shared/cat-chip';
 import { MoveToFolderSheet } from '@/components/shared/move-to-folder-sheet';
 import { DragDropProvider, useDragDrop } from '@/lib/use-drag-drop';
@@ -16,6 +15,8 @@ import { useTouchDrag } from '@/lib/use-touch-drag';
 import { AutoOrganizeModal } from '@/components/shared/auto-organize-modal';
 import { computeAutoOrganize } from '@/lib/auto-organize';
 import { Toast } from '@/components/ui/toast';
+import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
+import { DocumentThumb } from '@/components/shared/document-thumb';
 import type { Folder, Item } from '@/lib/types';
 
 interface FileManagerProps {
@@ -42,8 +43,18 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
   const [newFolderName, setNewFolderName] = useState('');
   const [showAutoOrganize, setShowAutoOrganize] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant?: 'default' | 'success' } | null>(null);
+  const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
 
   if (!e) return null;
+
+  function handleOpenItem(id: string) {
+    const item = state.items.find(i => i.id === id);
+    if (item?.convexDocumentId) {
+      setPreviewDocumentId(item.convexDocumentId);
+    } else {
+      onOpenItem(id);
+    }
+  }
 
   const periods = [
     { id: 'all', label: 'All time' },
@@ -58,7 +69,11 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
     (period === 'custom'
       ? (customStart && customEnd ? inDateRange(it.date, customStart, customEnd) : true)
       : inPeriod(it.date, period)) &&
-    (search === '' || it.title.toLowerCase().includes(search.toLowerCase()) || (it.issuer || '').toLowerCase().includes(search.toLowerCase()))
+    (search === '' ||
+      it.title.toLowerCase().includes(search.toLowerCase()) ||
+      (it.issuer || '').toLowerCase().includes(search.toLowerCase()) ||
+      (it.ref || '').toLowerCase().includes(search.toLowerCase()) ||
+      it.tags?.some(tag => tag.toLowerCase().includes(search.toLowerCase())))
   );
 
   const byCat: Record<string, typeof filtered> = {};
@@ -151,6 +166,19 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{filtered.length} items · £{total.toLocaleString()} this period</div>
               </div>
             </div>
+            {Object.keys(e.info || {}).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                {Object.entries(e.info).slice(0, 6).map(([k, v]) => (
+                  <div key={k} style={{
+                    padding: '6px 8px', borderRadius: 8, background: '#fff',
+                    border: '0.5px solid var(--hair)', minWidth: 0,
+                  }}>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{k}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -267,7 +295,7 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
           activeFolderId ? (
             <FlatListWithMove
               items={displayItems}
-              onOpenItem={onOpenItem}
+              onOpenItem={handleOpenItem}
               onMoveItem={(id) => setMoveItemId(id)}
             />
           ) : (
@@ -278,7 +306,7 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
                 </div>
               )}
               <FolderGrid cats={visibleCats} byCat={byCat} category={category}
-                onOpenItem={onOpenItem}
+                onOpenItem={handleOpenItem}
                 items={folders.length > 0 ? unfiledItems : catFiltered}
                 hasFolders={folders.length > 0}
                 onMoveItem={(id) => setMoveItemId(id)}
@@ -288,25 +316,9 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
         ) : (
           <FlatListWithMove
             items={activeFolderId ? displayItems : catFiltered}
-            onOpenItem={onOpenItem}
+            onOpenItem={handleOpenItem}
             onMoveItem={(id) => setMoveItemId(id)}
           />
-        )}
-
-        {/* Info card */}
-        {!activeFolderId && (
-          <div style={{ padding: '20px 16px 0' }}>
-            <div style={{ background: '#fff', borderRadius: 12, padding: 14 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>About this entity</div>
-              {Object.entries(e.info || {}).map(([k, v], i, arr) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0',
-                  borderBottom: i === arr.length - 1 ? 'none' : '0.5px solid var(--hair)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>{k}</span>
-                  <span style={{ fontSize: 14, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         )}
 
         {/* Move to folder sheet */}
@@ -334,6 +346,14 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
             newFoldersCount={autoOrganizeResult.newFolders.length}
             onConfirm={handleAutoOrganizeConfirm}
             onCancel={() => setShowAutoOrganize(false)}
+          />
+        )}
+
+        {/* Document preview modal */}
+        {previewDocumentId && (
+          <DocumentPreviewModal
+            documentId={previewDocumentId}
+            onClose={() => setPreviewDocumentId(null)}
           />
         )}
       </div>
@@ -445,7 +465,7 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
             }}>
               <div onClick={() => onOpenItem(it.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
                 <div style={{ width: 32, height: 42, flexShrink: 0 }}>
-                  <DocPreview kind={it.preview || 'lambeth'} height={42} />
+                  <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview || 'lambeth'} height={42} title={it.title} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500, lineHeight: 1.3 }}>{it.title}</div>
@@ -490,7 +510,7 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
                   display: 'flex', flexDirection: 'column', gap: 6,
                 }}>
                   <div style={{ height: 88, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-                    <DocPreview kind={it.preview || 'lambeth'} height={88} />
+                    <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview || 'lambeth'} height={88} title={it.title} />
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 500, lineHeight: 1.25,
                     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as React.CSSProperties}>{it.title}</div>
@@ -539,7 +559,7 @@ function FlatListWithMove({ items, onOpenItem, onMoveItem }: {
           }}>
             <div onClick={() => onOpenItem(it.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
               <div style={{ width: 32, height: 42, flexShrink: 0 }}>
-                <DocPreview kind={it.preview || 'lambeth'} height={42} />
+                <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview || 'lambeth'} height={42} title={it.title} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500, lineHeight: 1.3 }}>{it.title}</div>

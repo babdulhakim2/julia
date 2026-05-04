@@ -5,7 +5,7 @@ import { ConvexClientProvider } from "@/components/providers/convex-client-provi
 import { StoreProvider } from "@/lib/store";
 
 export const metadata: Metadata = {
-  title: "Secretary",
+  title: "Julia",
   description: "AI-native company secretary",
 };
 

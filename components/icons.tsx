@@ -156,6 +156,22 @@ export const Ic = {
       <path d="M14 3l7 7-3 1-3 5-3-3-5 5v-5l-3-3 5-3 1-3 4-1z" stroke={c} strokeWidth="1.7" strokeLinejoin="round"/>
     </svg>
   ),
+  expand: (s = 18, c = 'currentColor') => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  collapse: (s = 18, c = 'currentColor') => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  clock: (s = 18, c = 'currentColor') => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.7"/>
+      <path d="M12 7v5l3 3" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
   dots: (s = 16, c = 'currentColor') => (
     <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="6" r="1.5" fill={c}/>

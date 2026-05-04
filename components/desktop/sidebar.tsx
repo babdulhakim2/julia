@@ -2,9 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
-import { UserButton } from '@clerk/nextjs';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useStore } from '@/lib/store';
@@ -18,6 +17,7 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
   const { user } = useUser();
   const { state } = useStore();
   const pathname = usePathname();
+  const router = useRouter();
   const isAdmin = useQuery(api.admin.isAdmin);
   const workspace = useQuery(api.workspaces.getMyWorkspace);
   const convexEntities = useQuery(
@@ -35,7 +35,6 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
     { href: '/files', label: 'Files', icon: 'building', badge: 0 },
     { href: '/calendar', label: 'Calendar', icon: 'cal', badge: dueSoon },
     { href: '/ask', label: 'Ask', icon: 'sparkle', badge: 0 },
-    { href: '/contacts', label: 'Contacts', icon: 'user', badge: 0 },
     ...(isAdmin === true ? [{ href: '/admin', label: 'Admin', icon: 'bolt', badge: review }] : []),
   ];
 
@@ -46,6 +45,9 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
   }
 
   const fullName = user?.fullName ?? 'Loading...';
+  const initials = user?.fullName
+    ? user.fullName.split(' ').map(name => name[0]).join('').toUpperCase().slice(0, 2)
+    : '?';
 
   return (
     <aside style={{
@@ -56,13 +58,8 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
       <div style={{ padding: '18px 18px 14px', display: 'flex', alignItems: 'center', gap: 9 }}>
         <div style={{ width: 26, height: 26, borderRadius: 7, background: 'var(--ink)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-          fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-display)', letterSpacing: -0.3 }}>S</div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', letterSpacing: -0.2 }}>Secretary</div>
-        <div style={{ marginLeft: 'auto' }}>
-          <Link href="/settings" title="Settings" style={{ background: 'transparent', border: 0, padding: 4, cursor: 'pointer', color: 'var(--muted)', display: 'flex' }}>
-            {Ic.dots(16, 'var(--muted)')}
-          </Link>
-        </div>
+          fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-display)', letterSpacing: -0.3 }}>J</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', letterSpacing: -0.2 }}>Julia</div>
       </div>
 
       {/* Capture / upload */}
@@ -119,11 +116,11 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
           const active = pathname === `/files/${e._id}` || pathname.startsWith(`/files/${e._id}/`);
           return (
             <Link key={e._id} href={`/files/${e._id}`} style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+              display: 'flex', alignItems: 'center', gap: 9,
               padding: '6px 10px', marginBottom: 1, borderRadius: 7,
               background: active ? 'rgba(0,0,0,0.06)' : 'transparent', cursor: 'pointer',
               color: 'var(--ink)', fontSize: 13, fontWeight: 500, fontFamily: 'var(--font)',
-              textAlign: 'left', textDecoration: 'none',
+              textAlign: 'left', textDecoration: 'none', minWidth: 0,
             }}>
               <span style={{ width: 16, height: 16, borderRadius: 4, background: e.color, color: '#fff',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -136,14 +133,24 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
       </div>
 
       {/* Footer */}
-      <div style={{ padding: '12px 14px', borderTop: '0.5px solid var(--sep)',
-        display: 'flex', alignItems: 'center', gap: 10 }}>
-        <UserButton />
+      <button onClick={() => router.push('/settings')} style={{ padding: '12px 14px', borderTop: '0.5px solid var(--sep)',
+        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', border: 0,
+        background: 'transparent', fontFamily: 'var(--font)', textAlign: 'left' }}>
+        {user?.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={user.imageUrl} alt="" style={{ width: 28, height: 28, borderRadius: 14, objectFit: 'cover', flexShrink: 0 }} />
+        ) : (
+          <span style={{
+            width: 28, height: 28, borderRadius: 14, background: '#E9E9EE', color: 'var(--ink)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 11.5, fontWeight: 700, flexShrink: 0,
+          }}>{initials}</span>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{fullName}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>{entities.length} entit{entities.length === 1 ? 'y' : 'ies'}</div>
         </div>
-      </div>
+      </button>
     </aside>
   );
 }
