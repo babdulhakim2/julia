@@ -11,8 +11,10 @@ interface UploadModalProps {
 }
 
 interface FileEntry {
+  file: File;
   name: string;
-  stage: 'uploading' | 'processing' | 'done' | 'error';
+  stage: 'ready' | 'uploading' | 'processing' | 'done' | 'error';
+  previewUrl?: string;
   error?: string;
 }
 
@@ -42,19 +44,6 @@ function supportedFile(file: File) {
   );
 }
 
-function Channel2({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
-  return (
-    <div style={{
-      padding: 12, borderRadius: 9, border: '0.5px solid var(--sep)', background: '#FAF9F5',
-    }}>
-      <div style={{ width: 24, height: 24, borderRadius: 6, background: 'oklch(0.95 0.04 252)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>{icon}</div>
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>{title}</div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
-    </div>
-  );
-}
-
 export function DesktopUploadModal({ onClose }: UploadModalProps) {
   const workspace = useQuery(api.workspaces.getMyWorkspace);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -63,10 +52,12 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
   const createProcessingJob = useMutation(api.processingJobs.create);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const objectUrlsRef = useRef<Set<string>>(new Set());
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<Id<'captureSessions'> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const activeSession = useQuery(
     api.captureSessions.get,
     activeSessionId ? { sessionId: activeSessionId } : 'skip',
@@ -84,7 +75,15 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
     }
   }, [activeSession]);
 
-  async function handleFiles(fileList: FileList) {
+  useEffect(() => {
+    const objectUrls = objectUrlsRef.current;
+    return () => {
+      objectUrls.forEach(url => URL.revokeObjectURL(url));
+      objectUrls.clear();
+    };
+  }, []);
+
+  function handleFiles(fileList: FileList) {
     setError(null);
     if (!workspace) {
       setError('Finish onboarding before uploading documents.');
@@ -96,36 +95,65 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
       setError('Use images, PDFs, text files, or Word documents under 25 MB.');
       return;
     }
-    const newEntries: FileEntry[] = fileArray.map(f => ({
-      name: f.name,
-      stage: 'uploading' as const,
-    }));
-    const baseIdx = files.length;
+    const newEntries: FileEntry[] = fileArray.map(f => {
+      const previewUrl = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined;
+      if (previewUrl) objectUrlsRef.current.add(previewUrl);
+      return {
+        file: f,
+        name: f.name,
+        stage: 'ready' as const,
+        previewUrl,
+      };
+    });
     setFiles(prev => [...prev, ...newEntries]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function removeFile(index: number) {
+    setFiles(prev => {
+      const entry = prev[index];
+      if (entry?.previewUrl) {
+        URL.revokeObjectURL(entry.previewUrl);
+        objectUrlsRef.current.delete(entry.previewUrl);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  async function submitFiles() {
+    setError(null);
+    if (!workspace) {
+      setError('Finish onboarding before uploading documents.');
+      return;
+    }
+
+    const uploadEntries = files
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => entry.stage === 'ready' || entry.stage === 'error');
+    if (uploadEntries.length === 0 || submitting) return;
+    setSubmitting(true);
+    const uploadIndexes = new Set(uploadEntries.map(({ index }) => index));
+    setFiles(prev => prev.map((f, index) => uploadIndexes.has(index) ? { ...f, stage: 'uploading' as const, error: undefined } : f));
 
     try {
-      // Create capture session
       const sessionId = await createCaptureSession({
         workspaceId: workspace._id,
         source: 'upload',
-        pageCount: fileArray.length,
+        pageCount: uploadEntries.length,
       });
       setActiveSessionId(sessionId);
 
-      // Upload each file
       let uploadedCount = 0;
-      for (let i = 0; i < fileArray.length; i++) {
-        const file = fileArray[i];
-        const idx = baseIdx + i;
+      for (let i = 0; i < uploadEntries.length; i++) {
+        const { entry, index } = uploadEntries[i];
+        const file = entry.file;
 
         try {
-          // Get upload URL
           const uploadUrl = await generateUploadUrl();
 
-          // Upload the file
           const uploadRes = await fetch(uploadUrl, {
             method: 'POST',
-            headers: { 'Content-Type': file.type },
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
             body: file,
           });
 
@@ -135,7 +163,6 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
 
           const { storageId } = await uploadRes.json();
 
-          // Store file reference
           await storeDocumentFile({
             workspaceId: workspace._id,
             captureSessionId: sessionId,
@@ -149,13 +176,13 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
 
           setFiles(prev =>
             prev.map((f, fi) =>
-              fi === idx ? { ...f, stage: 'processing' } : f,
+              fi === index ? { ...f, stage: 'processing' } : f,
             ),
           );
         } catch (err) {
           setFiles(prev =>
             prev.map((f, fi) =>
-              fi === idx
+              fi === index
                 ? { ...f, stage: 'error', error: err instanceof Error ? err.message : 'Upload failed' }
                 : f,
             ),
@@ -167,7 +194,6 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
         throw new Error('No files uploaded successfully');
       }
 
-      // Kick off document ingest processing job
       await createProcessingJob({
         workspaceId: workspace._id,
         kind: 'document_ingest',
@@ -178,9 +204,11 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload pipeline failed';
       setError(message);
-      setFiles(prev => prev.map((f, fi) => fi >= baseIdx && f.stage !== 'done'
+      setFiles(prev => prev.map((f) => f.stage !== 'done'
         ? { ...f, stage: 'error', error: message }
         : f));
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -235,14 +263,14 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
               {Ic.camera(22, '#fff')}
             </div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
-              {dragOver ? 'Drop to upload' : 'Drop letters, PDFs, or photos here'}
+              {dragOver ? 'Drop pages here' : 'Drop pages for one document here'}
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>I&apos;ll figure out which entity, the type, the amount, the deadline.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>Add all pages first. Julia will only process after you send them.</div>
             <button onClick={() => fileInputRef.current?.click()} style={{
               marginTop: 12, padding: '6px 14px', borderRadius: 7,
               background: 'var(--accent)', color: '#fff', border: 0, cursor: 'pointer',
               fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font)',
-            }}>Choose files</button>
+            }}>{files.length > 0 ? 'Add more pages' : 'Choose pages'}</button>
             <input
               ref={fileInputRef}
               type="file"
@@ -269,14 +297,38 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
                   display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
                   borderBottom: i === files.length - 1 ? 'none' : '0.5px solid var(--hair)',
                 }}>
+                  <div style={{
+                    width: 30, height: 38, borderRadius: 5, border: '0.5px solid var(--sep)',
+                    overflow: 'hidden', background: '#fff', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {f.previewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={f.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      Ic.doc(14, 'var(--muted)')
+                    )}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>Page {i + 1}</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    {f.stage === 'done' ? (
+                    {f.stage === 'ready' ? (
+                      <button onClick={() => removeFile(i)} style={{
+                        border: 0, background: 'transparent', color: 'var(--muted)',
+                        cursor: 'pointer', padding: 3, display: 'flex',
+                      }}>{Ic.x(14, 'var(--muted)')}</button>
+                    ) : f.stage === 'done' ? (
                       <span style={{ color: 'oklch(0.55 0.14 150)', fontSize: 12, fontWeight: 600 }}>Processed</span>
                     ) : f.stage === 'error' ? (
-                      <span title={f.error} style={{ color: 'oklch(0.55 0.20 25)', fontSize: 12, fontWeight: 600 }}>Error</span>
+                      <>
+                        <span title={f.error} style={{ color: 'oklch(0.55 0.20 25)', fontSize: 12, fontWeight: 600 }}>Error</span>
+                        <button onClick={() => removeFile(i)} style={{
+                          border: 0, background: 'transparent', color: 'var(--muted)',
+                          cursor: 'pointer', padding: 3, display: 'flex',
+                        }}>{Ic.x(14, 'var(--muted)')}</button>
+                      </>
                     ) : (
                       <>
                         <Spinner />
@@ -291,11 +343,19 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
             </div>
           )}
 
-          <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            <Channel2 icon={Ic.paperclip(14, 'var(--accent)')} title="WhatsApp" sub="+44 7700 900100" />
-            <Channel2 icon={Ic.doc(14, 'var(--accent)')} title="Email" sub="inbox@julia.app" />
-            <Channel2 icon={Ic.cal(14, 'var(--accent)')} title="Drive sync" sub="Auto-import folder" />
-          </div>
+          {files.length > 0 && (
+            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+                {files.length} page{files.length === 1 ? '' : 's'} queued as one document
+              </div>
+              <button onClick={submitFiles} disabled={submitting || files.every(f => f.stage !== 'ready' && f.stage !== 'error')} style={{
+                padding: '8px 14px', borderRadius: 8, border: 0,
+                background: submitting ? 'var(--muted2)' : 'var(--ink)', color: '#fff',
+                fontSize: 12.5, fontWeight: 700, cursor: submitting ? 'default' : 'pointer',
+                fontFamily: 'var(--font)',
+              }}>{submitting ? 'Sending...' : 'Send to Julia'}</button>
+            </div>
+          )}
         </div>
       </div>
     </div>

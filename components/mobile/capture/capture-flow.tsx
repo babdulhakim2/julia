@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
@@ -12,6 +12,11 @@ import { DocPreview } from '@/components/ui/doc-preview';
 interface CaptureFlowProps {
   onClose: () => void;
   onFiled: (pages: CapturedPage[]) => void;
+}
+
+interface LocalCapturedPage extends CapturedPage {
+  previewUrl: string;
+  fileName: string;
 }
 
 export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
@@ -26,44 +31,58 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   const createProcessingJob = useMutation(api.processingJobs.create);
 
   const [stage, setStage] = useState<'aim' | 'capturing' | 'extracting' | 'review' | 'uploading'>('aim');
-  const [pages, setPages] = useState<CapturedPage[]>([]);
+  const [pages, setPages] = useState<LocalCapturedPage[]>([]);
   const [capturedFiles, setCapturedFiles] = useState<File[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [showEntityPicker, setShowEntityPicker] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const objectUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const objectUrls = objectUrlsRef.current;
+    return () => {
+      objectUrls.forEach(url => URL.revokeObjectURL(url));
+      objectUrls.clear();
+    };
+  }, []);
 
   // Use the file input as a camera stand-in (on mobile it opens camera with capture attr)
   function trigger() {
     fileInputRef.current?.click();
   }
 
-  async function handleCapture(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function handleCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
+    setError(null);
     setStage('extracting');
 
-    setCapturedFiles(prev => [...prev, file]);
-
-    // Create a preview page entry (we'll fill real extraction data after upload)
-    const newPage: CapturedPage = {
-      preview: 'lambeth', // placeholder preview
-      type: 'Document',
-      issuer: 'Extracting...',
-      title: file.name.replace(/\.[^.]+$/, ''),
-      entity: entities?.[0]?._id ?? '',
-      confidence: 0,
-      fields: [],
-    };
+    setCapturedFiles(prev => [...prev, ...files]);
 
     setPages(prev => {
-      const next = [...prev, newPage];
-      setActiveIdx(next.length - 1);
+      const created = files.map((file, index): LocalCapturedPage => {
+        const previewUrl = URL.createObjectURL(file);
+        objectUrlsRef.current.add(previewUrl);
+        return {
+          preview: 'lambeth',
+          previewUrl,
+          fileName: file.name || `capture-${prev.length + index + 1}.jpg`,
+          type: 'Document page',
+          issuer: 'Ready to send',
+          title: file.name ? file.name.replace(/\.[^.]+$/, '') : `Captured page ${prev.length + index + 1}`,
+          entity: entities?.[0]?._id ?? '',
+          confidence: 0,
+          fields: [],
+        };
+      });
+      const next = [...prev, ...created];
+      setActiveIdx(next.length - created.length);
       return next;
     });
 
-    // Brief delay then show review
-    setTimeout(() => setStage('review'), 600);
+    setTimeout(() => setStage('review'), 300);
 
     // Reset input so same file can be selected again
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -72,6 +91,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   async function handleFile() {
     if (!workspace || capturedFiles.length === 0) return;
     setStage('uploading');
+    setError(null);
 
     try {
       const hintedEntityId = pages[0]?.entity
@@ -117,11 +137,34 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
         model: 'google/gemini-2.5-flash',
       });
 
-      onFiled(pages);
+      onFiled(pages.map(page => ({
+        preview: page.preview,
+        type: page.type,
+        issuer: page.issuer,
+        title: page.title,
+        entity: page.entity,
+        confidence: page.confidence,
+        fields: page.fields,
+        action: page.action,
+      })));
     } catch (err) {
       console.error('Capture upload error:', err);
+      setError(err instanceof Error ? err.message : 'Upload failed');
       setStage('review');
     }
+  }
+
+  function removePage(index: number) {
+    const target = pages[index];
+    if (target) {
+      URL.revokeObjectURL(target.previewUrl);
+      objectUrlsRef.current.delete(target.previewUrl);
+    }
+    const next = pages.filter((_, i) => i !== index);
+    setPages(next);
+    setActiveIdx(current => Math.max(0, Math.min(current >= index ? current - 1 : current, next.length - 1)));
+    if (next.length === 0) setStage('aim');
+    setCapturedFiles(prev => prev.filter((_, i) => i !== index));
   }
 
   const active = pages[activeIdx];
@@ -134,6 +177,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
       type="file"
       accept="image/*"
       capture="environment"
+      multiple
       onChange={handleCapture}
       style={{ display: 'none' }}
     />
@@ -184,7 +228,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
             {stage === 'extracting' && <>
               <span className="animate-spin" style={{ width: 13, height: 13, borderRadius: 99,
                 border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff' }}/>
-              Processing...
+              Capturing...
             </>}
           </div>
 
@@ -204,7 +248,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
               display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600,
             }}>
               <div style={{ width: 32, height: 40 }}>
-                <DocPreview kind={pages[pages.length-1].preview} height={40} />
+                <PagePreview page={pages[pages.length - 1]} height={40} />
               </div>
               {pages.length} page{pages.length > 1 ? 's' : ''}
             </div>
@@ -216,11 +260,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           background: 'linear-gradient(0deg, #000 60%, transparent)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <button style={{ width: 44, height: 44, borderRadius: 22, border: 0,
-            background: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {Ic.flash(20, '#fff')}
-          </button>
+          <div style={{ width: 44, height: 44 }} />
 
           <button onClick={trigger} disabled={stage !== 'aim'} style={{
             width: 76, height: 76, borderRadius: 38,
@@ -284,7 +324,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
 
         <div style={{ padding: '0 16px' }}>
           <div style={{ position: 'relative' }}>
-            <DocPreview kind={active.preview} height={180} />
+            <PagePreview page={active} height={180} />
             <div style={{
               position: 'absolute', top: 10, left: 10,
               padding: '4px 8px', borderRadius: 6,
@@ -296,12 +336,34 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           </div>
         </div>
 
+        {pages.length > 1 && (
+          <div className="no-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 16px 0' }}>
+            {pages.map((page, index) => (
+              <button key={page.previewUrl} onClick={() => setActiveIdx(index)} style={{
+                width: 48, height: 62, borderRadius: 7, padding: 0, overflow: 'hidden',
+                border: index === activeIdx ? '2px solid var(--accent)' : '0.5px solid var(--sep)',
+                background: '#fff', flexShrink: 0, cursor: 'pointer',
+              }}>
+                <PagePreview page={page} height={62} />
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 100 }}>
           <div style={{ padding: '16px 16px 4px' }}>
             <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>{active.type}</div>
             <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--ink)', letterSpacing: -0.3, marginTop: 4, lineHeight: 1.2, fontFamily: 'var(--font-display)' }}>{active.title}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>from {active.issuer}</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{active.issuer}</div>
           </div>
+
+          {error && (
+            <div style={{ margin: '10px 16px 0', padding: '10px 12px', borderRadius: 10,
+              background: 'oklch(0.96 0.04 25)', color: 'oklch(0.45 0.18 25)',
+              fontSize: 13, fontWeight: 600 }}>
+              {error}
+            </div>
+          )}
 
           {/* Entity assignment */}
           {activeEntity && (
@@ -372,11 +434,21 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           padding: '12px 16px 30px',
           background: 'linear-gradient(0deg, rgba(242,242,247,1) 60%, rgba(242,242,247,0))',
         }}>
-          <Btn full size="lg" variant="dark"
-            icon={Ic.check(18, '#fff', 2.5)}
-            onClick={handleFile}>
-            Looks right · file {pages.length > 1 ? `all ${pages.length}` : 'it'}
-          </Btn>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={() => setStage('aim')}>
+              Add page
+            </Btn>
+            <Btn size="lg" variant="dark" style={{ flex: 1.4 }}
+              icon={Ic.check(18, '#fff', 2.5)}
+              onClick={handleFile}>
+              Send {pages.length}
+            </Btn>
+          </div>
+          <button onClick={() => removePage(activeIdx)} style={{
+            marginTop: 8, width: '100%', border: 0, background: 'transparent',
+            color: 'var(--muted)', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font)',
+            cursor: 'pointer',
+          }}>Remove this page</button>
         </div>
 
         {/* Entity picker sheet */}
@@ -436,4 +508,18 @@ function Spinner() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </svg>
   );
+}
+
+function PagePreview({ page, height }: { page: LocalCapturedPage; height: number }) {
+  if (page.previewUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={page.previewUrl}
+        alt={page.title}
+        style={{ width: '100%', height, objectFit: 'cover', borderRadius: 8, display: 'block' }}
+      />
+    );
+  }
+  return <DocPreview kind={page.preview} height={height} />;
 }

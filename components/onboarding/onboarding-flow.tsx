@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useUser } from '@clerk/nextjs';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Ic, getIcon } from '@/components/icons';
 import { Btn } from '@/components/ui/button';
@@ -41,6 +41,8 @@ function Channel({ icon, title, sub }: { icon: React.ReactNode; title: string; s
 
 export function OnboardingFlow({ onDone }: OnboardingProps) {
   const { user } = useUser();
+  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const storeUser = useMutation(api.users.store);
   const createWorkspace = useMutation(api.workspaces.create);
   const createEntity = useMutation(api.entities.create);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
@@ -69,8 +71,9 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
     if (saving || entities.length === 0) return;
     setSaving(true);
     try {
-      // 1. Create workspace
-      const workspaceId = await createWorkspace({
+      await storeUser();
+
+      const workspaceId = workspace?._id ?? await createWorkspace({
         name: user?.fullName ? `${user.firstName}'s workspace` : 'My workspace',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });

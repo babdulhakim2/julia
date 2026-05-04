@@ -51,6 +51,24 @@ export const store = mutation({
       return existing._id;
     }
 
+    if (identity.email) {
+      const existingByEmail = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email))
+        .unique();
+
+      if (existingByEmail) {
+        await ctx.db.patch(existingByEmail._id, {
+          tokenIdentifier: identity.tokenIdentifier,
+          name: identity.name ?? existingByEmail.name,
+          imageUrl: identity.pictureUrl ?? existingByEmail.imageUrl,
+          lastSeenAt: now,
+          updatedAt: now,
+        });
+        return existingByEmail._id;
+      }
+    }
+
     const userId = await ctx.db.insert("users", {
       tokenIdentifier: identity.tokenIdentifier,
       email: identity.email,

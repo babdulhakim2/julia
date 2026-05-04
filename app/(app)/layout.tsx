@@ -29,6 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { dispatch } = useStore();
   const storeUser = useMutation(api.users.store);
   const userSynced = useRef(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [filedToast, setFiledToast] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState(loadSelectedItemId);
@@ -49,8 +50,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isAuthenticated && !userSynced.current) {
       userSynced.current = true;
-      storeUser().catch(() => {
+      storeUser().catch((error) => {
         userSynced.current = false;
+        setSyncError(error instanceof Error ? error.message : 'Could not sync user');
       });
     }
   }, [isAuthenticated, storeUser]);
@@ -101,18 +103,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [selectedItemId]);
 
-  // Loading state — queries haven't resolved yet
-  if (me === undefined) {
-    return null;
+  if (syncError) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, color: 'var(--muted)', fontSize: 14 }}>
+        Could not sync your account. Sign out and back in, then try again.
+      </div>
+    );
   }
 
-  // Not authenticated (shouldn't happen — Clerk middleware handles)
+  // Loading state — queries haven't resolved yet, or the first user sync is in flight
+  if (me === undefined || (isAuthenticated && me === null)) {
+    return null;
+  }
   if (me === null) {
     return null;
   }
 
-  // Onboarding gate: incomplete onboarding or no entities → redirect
-  if (!me.onboardingComplete || (entities !== undefined && entities.length === 0)) {
+  if (workspace === undefined) {
+    return null;
+  }
+
+  // Onboarding gate: incomplete user, no workspace, or no entities → redirect
+  if (!me.onboardingComplete || workspace === null || (entities !== undefined && entities.length === 0)) {
     return <ClientRedirect href="/onboarding" />;
   }
 
