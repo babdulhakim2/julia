@@ -43,7 +43,6 @@ export default function AdminPage() {
           subtitle="Tenant monitoring & usage"
           search={search}
           setSearch={setSearch}
-          onCapture={() => {}}
         />
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <AdminDashboard search={search} />

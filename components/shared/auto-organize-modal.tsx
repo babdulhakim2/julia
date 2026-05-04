@@ -169,6 +169,9 @@ function ProposalPhase({
                     {fs.items.length} item{fs.items.length > 1 ? 's' : ''}
                   </span>
                 </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6, paddingLeft: 28 }}>
+                  {fs.reason}
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 28 }}>
                   {fs.items.slice(0, 5).map(it => (
                     <div key={it.id} style={{

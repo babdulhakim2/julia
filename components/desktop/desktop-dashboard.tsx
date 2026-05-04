@@ -8,6 +8,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { DocumentThumb } from '@/components/shared/document-thumb';
 import { ItemsTable } from './items-table';
 import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
+import { attentionSummary, getAttentionItems } from '@/lib/attention';
 
 interface DashboardProps {
   items: Item[];
@@ -23,29 +24,17 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
   const openItems = items.filter(i => i.status !== 'done');
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
 
-  // Calculate hero stats from live date
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const in7 = new Date(today);
-  in7.setDate(in7.getDate() + 7);
-  const in7str = in7.toISOString().slice(0, 10);
-
-  const dueIn7 = items.filter(i => i.dueDate && i.dueDate >= todayStr && i.dueDate <= in7str && i.status !== 'done');
-  const totalDue7 = dueIn7.reduce((s, i) => s + (i.amount || 0), 0);
-  const overdue = items.filter(i => i.status === 'overdue' || (i.dueDate !== undefined && i.dueDate < todayStr && i.status !== 'done'));
+  const attention = getAttentionItems(items);
+  const summary = attentionSummary(attention);
+  const attentionItems = attention.map(entry => entry.item);
+  const urgentAmount = attentionItems.reduce((s, i) => s + (i.amount || 0), 0);
   const drafts = items.filter(i => i.drafted || i.status === 'drafting');
 
   // Grouped sections
   const needsReview = openItems.filter(i => i.status === 'needs_review');
-  const dueThisWeek = openItems
-    .filter(i =>
-      i.status === 'overdue' ||
-      i.status === 'due_soon' ||
-      (i.dueDate !== undefined && i.dueDate <= in7str),
-    )
-    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+  const attentionById = new Map(attention.map(entry => [entry.item.id, entry]));
   const upcoming = openItems
-    .filter(i => i.status === 'scheduled' && (!i.dueDate || i.dueDate > in7str))
+    .filter(i => i.status === 'scheduled' && !attentionById.has(i.id))
     .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
 
   function handlePreviewItem(item: Item) {
@@ -66,15 +55,13 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11,
             color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
-            {Ic.sparkle(11, 'rgba(255,255,255,0.55)')} Your week
+            {Ic.sparkle(11, 'rgba(255,255,255,0.55)')} Needs attention
           </div>
           <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: -0.3, marginTop: 8, lineHeight: 1.3, fontFamily: 'var(--font-display)' }}>
-            <span style={{ color: '#fff' }}>{totalDue7 > 0 ? `£${totalDue7.toLocaleString()}` : 'Nothing'}</span>
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}> due in the next 7 days, </span>
-            <span style={{ color: '#fff' }}>{overdue.length} overdue</span>
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}>. </span>
-            <span style={{ color: '#fff' }}>{drafts.length} draft{drafts.length !== 1 ? 's' : ''}</span>
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}> waiting on you.</span>
+            <span style={{ color: '#fff' }}>{summary.label}</span>
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}> - {summary.detail}</span>
+            {urgentAmount > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}> £{urgentAmount.toLocaleString()} in related amounts.</span>}
+            {drafts.length > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}> {drafts.length} draft{drafts.length !== 1 ? 's' : ''} waiting.</span>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
             <button onClick={() => router.push('/ask')} style={{
@@ -116,26 +103,27 @@ export function DesktopDashboard({ items, entities, search, selectedItemId, setS
         </div>
       )}
 
-      {/* Due this week */}
-      {dueThisWeek.length > 0 && (
+      {/* Attention */}
+      {attention.length > 0 && (
         <div style={{ padding: '20px 24px 0' }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
-            Due this week · {dueThisWeek.length}
+            Needs attention · {attention.length}
           </div>
           <div style={{ background: '#FAF9F5', borderRadius: 10, border: '0.5px solid var(--sep)', overflow: 'hidden' }}>
-            {dueThisWeek.map((it, i) => {
+            {attention.map((entry, i) => {
+              const it = entry.item;
               const e = ent[it.entity || ''];
               return (
                 <button key={it.id} onClick={() => handlePreviewItem(it)} style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
                   background: selectedItemId === it.id ? 'rgba(0,122,255,0.05)' : 'transparent',
-                  border: 0, borderBottom: i === dueThisWeek.length - 1 ? 'none' : '0.5px solid var(--hair)',
+                  border: 0, borderBottom: i === attention.length - 1 ? 'none' : '0.5px solid var(--hair)',
                   cursor: 'pointer', fontFamily: 'var(--font)', textAlign: 'left',
                 }}>
                   <div style={{ width: 4, height: 28, borderRadius: 2, background: e?.color, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{it.title}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>{e?.name}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>{e?.name || 'Unassigned'} · {entry.reason}</div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     {it.amount && <div style={{ fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>£{it.amount.toLocaleString()}</div>}

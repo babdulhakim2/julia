@@ -31,7 +31,7 @@ export default function FilesPage() {
           subtitle={`${state.entities.length} entities`}
           search={search}
           setSearch={setSearch}
-          onCapture={() => {}}
+          semanticSearch
         />
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>

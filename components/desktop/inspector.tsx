@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
-import { useQuery } from 'convex/react';
+import React, { useState } from 'react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { useStore } from '@/lib/store';
 import { STATUS_META } from '@/lib/data';
+import { Toast } from '@/components/ui/toast';
 
 interface InspectorProps {
   itemId: string;
@@ -102,7 +103,10 @@ function PlaceholderPreview({ it }: { it: { issuer?: string; type: string; title
 }
 
 export function DesktopInspector({ itemId }: InspectorProps) {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
+  const updateDocument = useMutation(api.documents.update);
+  const [toast, setToast] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const it = state.items.find(i => i.id === itemId);
   const e = state.entities.find(x => x.id === it?.entity);
   const meta = it ? STATUS_META[it.status] : null;
@@ -113,6 +117,24 @@ export function DesktopInspector({ itemId }: InspectorProps) {
         Select an item to see details.
       </aside>
     );
+  }
+
+  async function markHandled() {
+    if (!it || saving || it.status === 'done') return;
+    setSaving(true);
+    try {
+      if (it.convexDocumentId) {
+        await updateDocument({
+          documentId: it.convexDocumentId as Id<'documents'>,
+          status: 'done',
+        });
+      }
+      dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { status: 'done' } });
+      setToast('Marked as handled');
+      setTimeout(() => setToast(null), 2500);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -149,17 +171,15 @@ export function DesktopInspector({ itemId }: InspectorProps) {
 
       {/* Actions */}
       <div style={{ padding: 14, borderTop: '0.5px solid var(--sep)', display: 'flex', gap: 8 }}>
-        <button style={{
+        <button onClick={markHandled} disabled={saving || it.status === 'done'} style={{
           flex: 1, padding: '8px 12px', borderRadius: 8,
-          background: 'rgba(0,0,0,0.05)', border: 0, cursor: 'pointer',
-          fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', fontFamily: 'var(--font)',
-        }}>Open original</button>
-        <button style={{
-          flex: 1, padding: '8px 12px', borderRadius: 8,
-          background: 'var(--ink)', color: '#fff', border: 0, cursor: 'pointer',
+          background: it.status === 'done' ? 'rgba(0,0,0,0.08)' : 'var(--ink)',
+          color: it.status === 'done' ? 'var(--muted)' : '#fff', border: 0,
+          cursor: saving || it.status === 'done' ? 'default' : 'pointer',
           fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font)',
-        }}>Mark handled</button>
+        }}>{saving ? 'Marking...' : it.status === 'done' ? 'Handled' : 'Mark handled'}</button>
       </div>
+      {toast && <Toast message={toast} variant="success" />}
     </aside>
   );
 }

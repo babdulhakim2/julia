@@ -1,5 +1,6 @@
 import type { StoreState } from "@/lib/store";
 import type { UsageEvent } from "@/lib/types";
+import { getAttentionItems } from "@/lib/attention";
 
 export interface AssistantReply {
   text: string;
@@ -158,22 +159,17 @@ export function localSecretaryReply(
   reason?: string,
 ): AssistantReply {
   const t = question.toLowerCase();
-  const today = new Date().toISOString().slice(0, 10);
-  const nextWeek = new Date();
-  nextWeek.setDate(nextWeek.getDate() + 7);
-  const nextWeekKey = nextWeek.toISOString().slice(0, 10);
-  const dueItems = state.items
-    .filter((item) =>
-      item.status === "overdue" ||
-      item.status === "due_soon" ||
-      (item.dueDate !== undefined && item.dueDate >= today && item.dueDate <= nextWeekKey),
-    )
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
+  const urgent = getAttentionItems(state.items);
+  const dueItems = urgent.map((entry) => entry.item);
 
   let text = "I need OpenRouter configured before I can answer with the LLM.";
   let items: string[] | undefined;
 
-  if (t.includes("due") && (t.includes("week") || t.includes("soon"))) {
+  if (
+    (t.includes("due") && (t.includes("week") || t.includes("soon"))) ||
+    t.includes("urgent") ||
+    t.includes("attention")
+  ) {
     const amount = dueItems.reduce((sum, item) => sum + (item.amount || 0), 0);
     const lines = dueItems.slice(0, 8).map((item) => {
       const title = item.convexDocumentId
@@ -184,9 +180,9 @@ export function localSecretaryReply(
       return `- ${title}: ${due}${itemAmount}`;
     });
     text = [
-      "## Due this week",
-      `You have **${dueItems.length}** open due item${dueItems.length === 1 ? "" : "s"}${amount ? `, totalling **£${amount.toLocaleString()}**` : ""}.`,
-      lines.length ? lines.join("\n") : "Nothing is due in the next 7 days.",
+      "## Needs attention",
+      `You have **${urgent.length}** item${urgent.length === 1 ? "" : "s"} needing attention${amount ? `, with **£${amount.toLocaleString()}** in related amounts` : ""}.`,
+      lines.length ? lines.join("\n") : "Nothing urgent right now.",
     ].join("\n\n");
     items = dueItems.map((item) => item.id);
   } else if (t.includes("mot")) {

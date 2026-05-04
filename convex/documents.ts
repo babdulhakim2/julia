@@ -124,6 +124,29 @@ export const update = mutation({
       }
     }
     await ctx.db.patch(documentId, updates);
+
+    if (args.status === "done") {
+      const now = Date.now();
+      const events = await ctx.db
+        .query("events")
+        .withIndex("by_documentId", (q) => q.eq("documentId", documentId))
+        .take(100);
+      for (const event of events) {
+        if (event.status !== "done") {
+          await ctx.db.patch(event._id, { status: "done", updatedAt: now });
+        }
+      }
+
+      const reminders = await ctx.db
+        .query("reminders")
+        .withIndex("by_documentId", (q) => q.eq("documentId", documentId))
+        .take(100);
+      for (const reminder of reminders) {
+        if (reminder.status === "pending") {
+          await ctx.db.patch(reminder._id, { status: "dismissed", updatedAt: now });
+        }
+      }
+    }
   },
 });
 

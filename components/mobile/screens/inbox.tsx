@@ -14,6 +14,7 @@ import { NavBar } from '@/components/ui/nav-bar';
 import { EntityChip } from '@/components/ui/entity-chip';
 import { DocumentThumb } from '@/components/shared/document-thumb';
 import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
+import { attentionSummary, getAttentionItems } from '@/lib/attention';
 
 interface InboxViewProps {
   onOpenItem: (id: string) => void;
@@ -31,29 +32,18 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
   // Dynamic date and stats
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  const in7 = new Date(now); in7.setDate(in7.getDate() + 7);
-  const todayStr = now.toISOString().slice(0, 10);
-  const in7str = in7.toISOString().slice(0, 10);
 
   const review = items.filter(i => i.status === 'needs_review');
-  const overdue = items.filter(i => i.status === 'overdue' || (i.dueDate !== undefined && i.dueDate < todayStr && i.status !== 'done'));
-  const dueSoon = items
-    .filter(i =>
-      i.status !== 'done' && (
-        i.status === 'overdue' ||
-        i.status === 'due_soon' ||
-        (i.dueDate !== undefined && i.dueDate <= in7str)
-      ),
-    )
-    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+  const attention = getAttentionItems(items, now);
+  const summary = attentionSummary(attention);
+  const attentionById = new Map(attention.map(entry => [entry.item.id, entry]));
   const upcoming = items
-    .filter(i => i.status === 'scheduled' && (!i.dueDate || i.dueDate > in7str))
+    .filter(i => i.status === 'scheduled' && !attentionById.has(i.id))
     .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
   const drafts = items.filter(i => i.drafted || i.status === 'drafting');
   const entById = Object.fromEntries(entities.map(e => [e.id, e]));
 
-  const dueIn7 = items.filter(i => i.dueDate && i.dueDate >= todayStr && i.dueDate <= in7str && i.status !== 'done');
-  const totalDue7 = dueIn7.reduce((s, i) => s + (i.amount || 0), 0);
+  const urgentAmount = attention.reduce((s, entry) => s + (entry.item.amount || 0), 0);
 
   // User initials
   const initials = user?.fullName
@@ -114,15 +104,13 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12,
             color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
-            {Ic.sparkle(12, 'rgba(255,255,255,0.55)')} Your week
+            {Ic.sparkle(12, 'rgba(255,255,255,0.55)')} Needs attention
           </div>
           <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.4, marginTop: 8, lineHeight: 1.25, fontFamily: 'var(--font-display)' }}>
-            <span style={{ color: '#fff' }}>{totalDue7 > 0 ? `£${totalDue7.toLocaleString()}` : 'Nothing'}</span>
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}> due in the next 7 days, </span>
-            <span style={{ color: '#fff' }}>{overdue.length} overdue</span>
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}>. </span>
-            <span style={{ color: '#fff' }}>{drafts.length} draft{drafts.length !== 1 ? 's' : ''}</span>
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}> waiting on you.</span>
+            <span style={{ color: '#fff' }}>{summary.label}</span>
+            <span style={{ color: 'rgba(255,255,255,0.5)' }}> - {summary.detail}</span>
+            {urgentAmount > 0 && <span style={{ color: 'rgba(255,255,255,0.5)' }}> £{urgentAmount.toLocaleString()} related.</span>}
+            {drafts.length > 0 && <span style={{ color: 'rgba(255,255,255,0.5)' }}> {drafts.length} draft{drafts.length !== 1 ? 's' : ''} waiting.</span>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
             <Btn size="sm" variant="dark" onClick={() => onNavigate('ask')} style={{ background: 'rgba(255,255,255,0.15)' }}>
@@ -163,19 +151,20 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
         </ListGroup>
       )}
 
-      {/* Due soon / overdue */}
-      {dueSoon.length > 0 && (
-        <ListGroup header={`Due this week · ${dueSoon.length}`}>
-          {dueSoon.map((it, i) => {
+      {/* Needs attention */}
+      {attention.length > 0 && (
+        <ListGroup header={`Needs attention · ${attention.length}`}>
+          {attention.map((entry, i) => {
+            const it = entry.item;
             const e = entById[it.entity || ''];
             return (
               <Row key={it.id}
                 onClick={() => handleOpenItem(it.id)}
-                last={i === dueSoon.length - 1}
+                last={i === attention.length - 1}
                 icon={<span style={{ width: 8, height: 8, borderRadius: 99, background: e?.color }} />}
                 iconBg={e?.color ? 'transparent' : 'var(--accent-soft)'}
                 title={it.title}
-                sub={`${e?.name || 'Unassigned'} · ${it.type}`}
+                sub={`${e?.name || 'Unassigned'} · ${entry.reason}`}
                 value={it.amount ? `£${it.amount}` : undefined}
                 valueSub={fmtDate(it.dueDate)}
               />

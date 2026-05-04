@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
-const DOCUMENT_EMBEDDING_MODEL = "google/text-embedding-004";
+const DOCUMENT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
+const EMBEDDING_DIMENSIONS = 768;
 
 /**
  * Hydrates vector search results with document details.
@@ -95,6 +96,7 @@ export const semanticSearch = action({
       body: JSON.stringify({
         model: DOCUMENT_EMBEDDING_MODEL,
         input: args.query,
+        dimensions: EMBEDDING_DIMENSIONS,
       }),
     });
 
@@ -109,6 +111,12 @@ export const semanticSearch = action({
     const queryEmbedding = data?.data?.[0]?.embedding;
     if (!Array.isArray(queryEmbedding)) {
       return { results: [], error: "Invalid embedding response" };
+    }
+    if (queryEmbedding.length !== EMBEDDING_DIMENSIONS) {
+      return {
+        results: [],
+        error: `Embedding dimension mismatch: expected ${EMBEDDING_DIMENSIONS}, got ${queryEmbedding.length}`,
+      };
     }
 
     // Vector search — build filter based on whether entityId is provided

@@ -32,7 +32,7 @@ export default function CalendarPage() {
           subtitle="Everything dated, across every entity"
           search={search}
           setSearch={setSearch}
-          onCapture={() => {}}
+          semanticSearch
         />
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <DesktopCalendar

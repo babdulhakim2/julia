@@ -36,7 +36,7 @@ export default function InboxPage() {
           subtitle={`${state.items.filter(i => i.status !== 'done').length} open · ${state.items.length} total`}
           search={search}
           setSearch={setSearch}
-          onCapture={() => {}}
+          semanticSearch
         />
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <DesktopDashboard

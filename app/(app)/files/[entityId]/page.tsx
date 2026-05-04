@@ -47,7 +47,8 @@ export default function EntityFilePage() {
           subtitle={entity.sub}
           search={search}
           setSearch={setSearch}
-          onCapture={() => {}}
+          semanticSearch
+          semanticEntityId={entityId}
         />
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <EntityFiles

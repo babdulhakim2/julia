@@ -24,7 +24,6 @@ export default function SettingsPage() {
           subtitle="Profile, entities & preferences"
           search={search}
           setSearch={setSearch}
-          onCapture={() => {}}
         />
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <DesktopSettings />

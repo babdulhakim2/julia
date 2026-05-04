@@ -5,7 +5,6 @@ import { useStore } from '@/lib/store';
 import { Ic } from '@/components/icons';
 import { getIcon } from '@/components/icons';
 import { NavBar } from '@/components/ui/nav-bar';
-import { NavBtn } from '@/components/ui/nav-btn';
 import { ListGroup } from '@/components/ui/list-group';
 import { Row } from '@/components/ui/row';
 
@@ -19,8 +18,7 @@ export function EntitiesList({ onOpenEntity, onOpenSearch, onOpenSettings }: Ent
   const { state } = useStore();
   return (
     <div style={{ paddingBottom: 120 }}>
-      <NavBar large title="Files" sub="By entity"
-        trailing={<NavBtn primary>{Ic.plus(22, 'var(--accent)', 2.4)}</NavBtn>} />
+      <NavBar large title="Files" sub="By entity" />
       <ListGroup>
         {state.entities.map((e, i) => (
           <div key={e.id} onClick={() => onOpenEntity(e.id)} style={{

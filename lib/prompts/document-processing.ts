@@ -1,6 +1,6 @@
 export const OPENROUTER_PROVIDER = "openrouter";
 export const GEMINI_FLASH_MODEL = "google/gemini-2.5-flash";
-export const DOCUMENT_EMBEDDING_MODEL = "google/text-embedding-004";
+export const DOCUMENT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
 export const DOCUMENT_EMBEDDING_DIMENSIONS = 768;
 
 export const PROMPT_KEYS = {
