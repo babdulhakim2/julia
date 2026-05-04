@@ -8,19 +8,12 @@ import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { getIcon } from '@/components/icons';
 import { DeleteEntityModal } from '@/components/shared/delete-entity-modal';
+import { AddEntityForm, TYPE_PRESETS, type AddEntityFormValue } from '@/components/onboarding/add-entity-form';
 
-const ENTITY_TYPES = ['business', 'property', 'vehicle', 'personal'] as const;
 const ENTITY_COLORS = [
   'oklch(0.62 0.13 28)', 'oklch(0.62 0.13 80)', 'oklch(0.62 0.10 200)',
   'oklch(0.55 0.10 250)', 'oklch(0.62 0.06 300)', 'oklch(0.55 0.14 150)',
 ];
-
-const ICON_MAP: Record<string, string> = {
-  business: 'building',
-  property: 'home',
-  vehicle: 'car',
-  personal: 'user',
-};
 
 export function DesktopSettings() {
   const { user } = useUser();
@@ -33,10 +26,7 @@ export function DesktopSettings() {
   );
   const createEntity = useMutation(api.entities.create);
 
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState('');
-  const [sub, setSub] = useState('');
-  const [type, setType] = useState<typeof ENTITY_TYPES[number]>('business');
+  const [adding, setAdding] = useState<AddEntityFormValue | null>(null);
   const [deleteEntityId, setDeleteEntityId] = useState<Id<"entities"> | null>(null);
 
   const initials = user?.fullName
@@ -44,18 +34,18 @@ export function DesktopSettings() {
     : '?';
 
   async function handleAdd() {
-    if (!name.trim() || !workspace) return;
+    if (!adding?.name.trim() || !workspace) return;
+    const preset = TYPE_PRESETS[adding.type] ?? TYPE_PRESETS.business;
     await createEntity({
       workspaceId: workspace._id,
-      kind: type,
-      name: name.trim(),
-      subtitle: sub.trim() || undefined,
-      icon: ICON_MAP[type] || 'building',
+      kind: adding.type as 'business' | 'property' | 'vehicle' | 'personal',
+      name: adding.name.trim(),
+      subtitle: adding.sub.trim() || preset.subPlaceholder,
+      icon: preset.icon,
       color: ENTITY_COLORS[(entities?.length ?? 0) % ENTITY_COLORS.length],
+      identifiers: adding.info,
     });
-    setName('');
-    setSub('');
-    setAdding(false);
+    setAdding(null);
   }
 
   return (
@@ -89,7 +79,7 @@ export function DesktopSettings() {
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Entities</div>
-          <button onClick={() => setAdding(!adding)} style={{
+          <button onClick={() => setAdding(adding ? null : { type: 'business', name: '', sub: '', info: {} })} style={{
             background: 'transparent', border: 0, cursor: 'pointer',
             fontSize: 12, color: 'var(--accent)', fontWeight: 600, fontFamily: 'var(--font)',
           }}>{adding ? 'Cancel' : '+ Add entity'}</button>
@@ -100,20 +90,12 @@ export function DesktopSettings() {
             background: '#FAF9F5', borderRadius: 10, padding: 14, marginBottom: 12,
             border: '0.5px solid var(--sep)',
           }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Entity name"
-                style={{ flex: '1 1 180px', padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', outline: 'none' }} />
-              <input value={sub} onChange={e => setSub(e.target.value)} placeholder="Description (optional)"
-                style={{ flex: '1 1 180px', padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', outline: 'none' }} />
-              <select value={type} onChange={e => setType(e.target.value as typeof ENTITY_TYPES[number])}
-                style={{ flex: '0 1 150px', padding: '7px 10px', borderRadius: 7, border: '0.5px solid var(--sep)', fontSize: 13, fontFamily: 'var(--font)', background: '#fff' }}>
-                {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <button onClick={handleAdd} style={{
-                padding: '7px 14px', borderRadius: 7, background: 'var(--ink)', color: '#fff',
-                border: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font)',
-              }}>Add</button>
-            </div>
+            <AddEntityForm
+              value={adding}
+              onChange={setAdding}
+              onCancel={() => setAdding(null)}
+              onCommit={handleAdd}
+            />
           </div>
         )}
 
@@ -143,7 +125,7 @@ export function DesktopSettings() {
         <DeleteEntityModal
           entityId={deleteEntityId}
           onClose={() => setDeleteEntityId(null)}
-          onDeleted={() => { setDeleteEntityId(null); router.push('/files'); }}
+          onDeleted={() => { setDeleteEntityId(null); router.push('/docs'); }}
         />
       )}
     </div>

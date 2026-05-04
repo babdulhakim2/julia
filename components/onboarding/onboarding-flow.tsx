@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
@@ -25,19 +25,6 @@ const ENTITY_COLORS = [
   'oklch(0.62 0.13 28)', 'oklch(0.62 0.13 80)', 'oklch(0.62 0.10 200)',
   'oklch(0.55 0.10 250)', 'oklch(0.62 0.06 300)', 'oklch(0.55 0.14 150)',
 ];
-
-function Channel({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
-      <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--accent-soft)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500 }}>{title}</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{sub}</div>
-      </div>
-    </div>
-  );
-}
 
 export function OnboardingFlow({ onDone }: OnboardingProps) {
   const { user } = useUser();
@@ -122,7 +109,7 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
         </div>
         <Btn full size="lg" variant="dark" onClick={() => setStep(1)}>Get set up</Btn>
         <div style={{ textAlign: 'center', marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
-          We&apos;ll text you on WhatsApp too.
+          Takes about a minute.
         </div>
       </div>
     );
@@ -261,15 +248,6 @@ export function OnboardingFlow({ onDone }: OnboardingProps) {
             </div>
           </div>
 
-          <div style={{ background: '#fff', borderRadius: 12, padding: 14 }}>
-            <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600,
-              textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Or, send by</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <Channel icon={Ic.paperclip(16, 'var(--accent)')} title="WhatsApp" sub="+44 7700 900100" />
-              <Channel icon={Ic.doc(16, 'var(--accent)')} title="Email forward" sub="inbox@julia.app" />
-              <Channel icon={Ic.mic(16, 'var(--accent)')} title="Voice notes" sub="Same WhatsApp number" />
-            </div>
-          </div>
         </div>
 
         <div style={{ padding: '12px 16px 0', display: 'flex', gap: 8 }}>

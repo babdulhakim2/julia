@@ -37,6 +37,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   const [showEntityPicker, setShowEntityPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialPickerOpenedRef = useRef(false);
   const objectUrlsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -46,6 +47,15 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
       objectUrls.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (initialPickerOpenedRef.current || stage !== 'aim' || pages.length > 0) return;
+    initialPickerOpenedRef.current = true;
+    const id = window.setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [pages.length, stage]);
 
   // Use the file input as a camera stand-in (on mobile it opens camera with capture attr)
   function trigger() {
@@ -185,101 +195,60 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
 
   // AIM stage
   if (stage === 'aim' || stage === 'capturing' || stage === 'extracting') {
+    const busy = stage === 'capturing' || stage === 'extracting';
     return (
-      <div style={{ position: 'absolute', inset: 0, background: '#000', color: '#fff',
+      <div style={{ position: 'absolute', inset: 0, background: 'var(--background)', color: 'var(--ink)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 'inherit' }}>
         {hiddenInput}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', inset: 0,
-            background: 'radial-gradient(120% 80% at 50% 60%, #2a2520 0%, #0a0908 70%)',
-          }} />
-          <div style={{
-            position: 'absolute', left: '50%', top: '52%',
-            transform: 'translate(-50%, -50%) rotate(-2.4deg)',
-            width: '74%', boxShadow: '0 30px 60px rgba(0,0,0,0.6)',
-          }}>
-            <DocPreview kind="lambeth" height={360} />
-          </div>
-
-          {/* AI scan reticle */}
-          <svg viewBox="0 0 200 360" preserveAspectRatio="none" style={{
-            position: 'absolute', inset: '8% 8%', width: '84%', height: '84%',
-            opacity: stage === 'aim' ? 0.85 : 0.4, pointerEvents: 'none',
-          }}>
-            {([[0,0],[200,0],[0,360],[200,360]] as [number,number][]).map(([x,y],i) => {
-              const sx = x === 0 ? 1 : -1, sy = y === 0 ? 1 : -1;
-              return (
-                <path key={i} d={`M${x+sx*2} ${y+sy*22} L${x+sx*2} ${y+sy*2} L${x+sx*22} ${y+sy*2}`}
-                  stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-              );
-            })}
-          </svg>
-
-          {/* status banner */}
-          <div style={{
-            position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-            padding: '8px 14px', borderRadius: 999,
-            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(20px)',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            fontSize: 13, fontWeight: 500, color: '#fff', whiteSpace: 'nowrap',
-          }}>
-            {stage === 'aim' && <>{Ic.sparkle(13, '#fff')} Tap to capture document</>}
-            {stage === 'capturing' && <>Captured</>}
-            {stage === 'extracting' && <>
-              <span className="animate-spin" style={{ width: 13, height: 13, borderRadius: 99,
-                border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff' }}/>
-              Capturing...
-            </>}
-          </div>
-
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '16px 16px 0' }}>
           <button onClick={onClose} style={{
-            position: 'absolute', top: 16, right: 16,
             width: 36, height: 36, borderRadius: 18,
-            background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(20px)',
-            border: 0, color: '#fff', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>{Ic.x(18, '#fff')}</button>
-
-          {pages.length > 0 && (
-            <div style={{
-              position: 'absolute', bottom: 16, left: 16,
-              padding: '6px 10px 6px 6px', borderRadius: 8,
-              background: 'rgba(255,255,255,0.92)', color: '#000',
-              display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600,
-            }}>
-              <div style={{ width: 32, height: 40 }}>
-                <PagePreview page={pages[pages.length - 1]} height={40} />
-              </div>
-              {pages.length} page{pages.length > 1 ? 's' : ''}
-            </div>
-          )}
+            background: '#fff', border: '0.5px solid var(--sep)', color: 'var(--ink)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>{Ic.x(18, 'var(--ink)')}</button>
         </div>
 
         <div style={{
-          padding: '20px 32px 28px',
-          background: 'linear-gradient(0deg, #000 60%, transparent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flex: 1, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          padding: '32px 28px', textAlign: 'center',
         }}>
-          <div style={{ width: 44, height: 44 }} />
-
-          <button onClick={trigger} disabled={stage !== 'aim'} style={{
-            width: 76, height: 76, borderRadius: 38,
-            background: 'transparent', border: '4px solid #fff', cursor: 'pointer',
+          <div style={{
+            width: 74, height: 74, borderRadius: 24,
+            background: 'var(--ink)', color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'transform 120ms', transform: stage === 'capturing' ? 'scale(0.92)' : 'scale(1)',
+            marginBottom: 18,
           }}>
-            <div style={{ width: 60, height: 60, borderRadius: 30, background: '#fff' }} />
-          </button>
-
-          <button onClick={() => pages.length > 0 && setStage('review')} style={{
-            width: 44, height: 44, borderRadius: 22, border: 0,
-            background: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer',
-            fontSize: 13, fontWeight: 600, fontFamily: 'var(--font)',
-            opacity: pages.length > 0 ? 1 : 0.4,
-          }}>
-            Done
-          </button>
+            {busy ? <Spinner /> : Ic.camera(32, '#fff')}
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)', letterSpacing: -0.3 }}>
+            {busy ? 'Adding page...' : 'Opening camera...'}
+          </div>
+          <div style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.45, marginTop: 8, maxWidth: 280 }}>
+            {pages.length > 0
+              ? `${pages.length} page${pages.length > 1 ? 's' : ''} captured. Add another page or review before sending.`
+              : 'Use your phone camera to capture the document. You can add more pages before sending.'}
+          </div>
+          {!busy && (
+            <button onClick={trigger} style={{
+              marginTop: 22, border: 0, borderRadius: 12,
+              background: 'var(--ink)', color: '#fff', cursor: 'pointer',
+              padding: '12px 18px', fontSize: 15, fontWeight: 700,
+              fontFamily: 'var(--font)',
+            }}>Open camera</button>
+          )}
         </div>
+
+        {pages.length > 0 && (
+          <div style={{ padding: '12px 16px 30px', display: 'flex', gap: 8 }}>
+            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={trigger}>
+              Add page
+            </Btn>
+            <Btn size="lg" variant="dark" style={{ flex: 1.2 }} onClick={() => setStage('review')}>
+              Review
+            </Btn>
+          </div>
+        )}
       </div>
     );
   }
@@ -316,7 +285,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
             {pages.length > 1 ? `Page ${activeIdx + 1} of ${pages.length}` : 'Review'}
           </div>
-          <button onClick={() => setStage('aim')} style={{
+          <button onClick={trigger} style={{
             background: 'transparent', border: 0, padding: 6, cursor: 'pointer', color: 'var(--accent)',
             fontSize: 15, fontWeight: 500, fontFamily: 'var(--font)',
           }}>+ Add</button>
@@ -435,7 +404,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           background: 'linear-gradient(0deg, rgba(242,242,247,1) 60%, rgba(242,242,247,0))',
         }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={() => setStage('aim')}>
+            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={trigger}>
               Add page
             </Btn>
             <Btn size="lg" variant="dark" style={{ flex: 1.4 }}

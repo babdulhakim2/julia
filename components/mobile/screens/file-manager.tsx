@@ -142,7 +142,7 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
           title={activeFolder ? activeFolder.name : e.name}
           leading={
             <NavBtn onClick={activeFolder ? () => setActiveFolderId(null) : onBack}>
-              {Ic.back(20, 'var(--accent)')} {activeFolder ? e.name : 'Files'}
+              {Ic.back(20, 'var(--accent)')} {activeFolder ? e.name : 'Docs'}
             </NavBtn>
           }
           trailing={

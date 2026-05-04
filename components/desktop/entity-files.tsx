@@ -278,13 +278,13 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
             {Ic.sparkle(12, 'var(--accent)')} Auto-organize
           </button>
           {activeFolderId && (
-            <button onClick={() => router.push(`/files/${entity.id}`)} style={{
+            <button onClick={() => router.push(`/docs/${entity.id}`)} style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '5px 10px', borderRadius: 6, border: 0,
               background: 'var(--accent)', color: '#fff', cursor: 'pointer',
               fontSize: 12, fontWeight: 600, fontFamily: 'var(--font)',
             }}>
-              {Ic.back(12, '#fff')} All files
+              {Ic.back(12, '#fff')} All docs
             </button>
           )}
         </div>
@@ -349,7 +349,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
         {/* Breadcrumb when inside a folder */}
         {activeFolder && (
           <div style={{ padding: '12px 24px 0', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            <button onClick={() => router.push(`/files/${entity.id}`)} style={{
+            <button onClick={() => router.push(`/docs/${entity.id}`)} style={{
               background: 'transparent', border: 0, cursor: 'pointer',
               color: 'var(--accent)', fontWeight: 500, fontFamily: 'var(--font)',
             }}>{entity.name}</button>
@@ -374,7 +374,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
                     name={f.name}
                     color={f.color}
                     itemCount={folderItemCount}
-                    onClick={() => router.push(`/files/${entity.id}?folder=${f.id}`)}
+                    onClick={() => router.push(`/docs/${entity.id}?folder=${f.id}`)}
                   />
                 );
               })}

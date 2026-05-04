@@ -18,7 +18,7 @@ export function EntitiesList({ onOpenEntity, onOpenSearch, onOpenSettings }: Ent
   const { state } = useStore();
   return (
     <div style={{ paddingBottom: 120 }}>
-      <NavBar large title="Files" sub="By entity" />
+      <NavBar large title="Docs" sub="By entity" />
       <ListGroup>
         {state.entities.map((e, i) => (
           <div key={e.id} onClick={() => onOpenEntity(e.id)} style={{
@@ -41,7 +41,7 @@ export function EntitiesList({ onOpenEntity, onOpenSearch, onOpenSettings }: Ent
       </ListGroup>
 
       <ListGroup header="Other">
-        <Row icon={Ic.search(18, 'var(--accent)')} iconBg="var(--accent-soft)" title="Search everything" sub="Files, deadlines, uploads" chevron onClick={onOpenSearch} />
+        <Row icon={Ic.search(18, 'var(--accent)')} iconBg="var(--accent-soft)" title="Search everything" sub="Docs, deadlines, uploads" chevron onClick={onOpenSearch} />
         <Row icon={Ic.dots(18, 'var(--accent)')} iconBg="var(--accent-soft)" title="Settings" sub="Profile, entities & preferences" chevron last onClick={onOpenSettings} />
       </ListGroup>
     </div>

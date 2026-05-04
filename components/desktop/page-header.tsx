@@ -92,7 +92,7 @@ export function PageHeader({ title, subtitle, search, setSearch, semanticSearch 
             e.preventDefault();
             submitSemanticSearch();
           }
-        }} placeholder={semanticSearch ? 'Search indexed documents...' : 'Search files, items, entities...'}
+        }} placeholder={semanticSearch ? 'Search indexed documents...' : 'Search docs, items, entities...'}
           style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontSize: 13, fontFamily: 'var(--font)', color: 'var(--ink)' }} />
         {semanticSearch && (
           <span style={{ fontSize: 11, color: 'var(--muted2)', padding: '1px 5px',

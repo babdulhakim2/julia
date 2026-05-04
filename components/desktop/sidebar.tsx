@@ -32,7 +32,7 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
 
   const navItems = [
     { href: '/inbox', label: 'Everything', icon: 'inbox', badge: items.filter(i => i.status !== 'done').length },
-    { href: '/files', label: 'Files', icon: 'building', badge: 0 },
+    { href: '/docs', label: 'Docs', icon: 'doc', badge: 0 },
     { href: '/calendar', label: 'Calendar', icon: 'cal', badge: dueSoon },
     { href: '/ask', label: 'Ask', icon: 'sparkle', badge: 0 },
     ...(isAdmin === true ? [{ href: '/admin', label: 'Admin', icon: 'bolt', badge: review }] : []),
@@ -40,7 +40,7 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
 
   function isActive(href: string) {
     if (href === '/inbox') return pathname === '/inbox' || pathname === '/';
-    if (href === '/files') return pathname === '/files';
+    if (href === '/docs') return pathname === '/docs' || pathname.startsWith('/docs/') || pathname === '/files' || pathname.startsWith('/files/');
     return pathname.startsWith(href);
   }
 
@@ -113,9 +113,13 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
       </div>
       <div style={{ padding: '0 8px', overflowY: 'auto', flex: 1 }}>
         {entities.map(e => {
-          const active = pathname === `/files/${e._id}` || pathname.startsWith(`/files/${e._id}/`);
+          const active =
+            pathname === `/docs/${e._id}` ||
+            pathname.startsWith(`/docs/${e._id}/`) ||
+            pathname === `/files/${e._id}` ||
+            pathname.startsWith(`/files/${e._id}/`);
           return (
-            <Link key={e._id} href={`/files/${e._id}`} style={{
+            <Link key={e._id} href={`/docs/${e._id}`} style={{
               display: 'flex', alignItems: 'center', gap: 9,
               padding: '6px 10px', marginBottom: 1, borderRadius: 7,
               background: active ? 'rgba(0,0,0,0.06)' : 'transparent', cursor: 'pointer',

@@ -9,6 +9,30 @@ interface MarkdownMessageProps {
   onDocumentPreview?: (documentId: string) => void;
 }
 
+const DOC_LINK_PREFIX = 'https://julia.local/doc/';
+
+function normalizeDocumentLinks(markdown: string) {
+  return markdown.replace(/\]\(doc:([^)]+)\)/g, (_, rawId: string) => {
+    return `](${DOC_LINK_PREFIX}${encodeURIComponent(rawId.trim())})`;
+  });
+}
+
+function documentIdFromHref(href?: string) {
+  if (!href) return null;
+  if (href.startsWith(DOC_LINK_PREFIX)) {
+    return decodeURIComponent(href.slice(DOC_LINK_PREFIX.length));
+  }
+  const docMatch = href.match(/doc:([^)\s]+)/);
+  return docMatch?.[1] ?? null;
+}
+
+function textFromChildren(children: React.ReactNode) {
+  return React.Children.toArray(children)
+    .map(child => (typeof child === 'string' || typeof child === 'number' ? String(child) : ''))
+    .join('')
+    .trim();
+}
+
 export function MarkdownMessage({ content, onDocumentPreview }: MarkdownMessageProps) {
   return (
     <Streamdown
@@ -80,16 +104,14 @@ export function MarkdownMessage({ content, onDocumentPreview }: MarkdownMessageP
           );
         },
         a: ({ href, children }) => {
-          // Detect doc: links for document citations
-          // IDs may be raw Convex IDs (j570abc) or store-prefixed (doc-j570abc)
-          const docMatch = href?.match(/doc:([\w-]+)/);
-          if (docMatch && onDocumentPreview) {
-            let docId = docMatch[1];
+          const linkedDocId = documentIdFromHref(href);
+          if (linkedDocId && onDocumentPreview) {
+            let docId = linkedDocId;
             // Strip the "doc-" prefix the store adds to Convex IDs
             if (docId.startsWith('doc-')) {
               docId = docId.slice(4);
             }
-            const title = typeof children === 'string' ? children : String(children ?? docId);
+            const title = textFromChildren(children) || docId;
             return <DocumentCitationCard documentId={docId} title={title} onPreview={onDocumentPreview} />;
           }
           return (
@@ -114,7 +136,7 @@ export function MarkdownMessage({ content, onDocumentPreview }: MarkdownMessageP
         ),
       }}
     >
-      {content}
+      {normalizeDocumentLinks(content)}
     </Streamdown>
   );
 }

@@ -11,19 +11,12 @@ import { NavBar } from '@/components/ui/nav-bar';
 import { NavBtn } from '@/components/ui/nav-btn';
 import { ListGroup } from '@/components/ui/list-group';
 import { DeleteEntityModal } from '@/components/shared/delete-entity-modal';
+import { AddEntityForm, TYPE_PRESETS, type AddEntityFormValue } from '@/components/onboarding/add-entity-form';
 
-const ENTITY_TYPES = ['business', 'property', 'vehicle', 'personal'] as const;
 const ENTITY_COLORS = [
   'oklch(0.62 0.13 28)', 'oklch(0.62 0.13 80)', 'oklch(0.62 0.10 200)',
   'oklch(0.55 0.10 250)', 'oklch(0.62 0.06 300)', 'oklch(0.55 0.14 150)',
 ];
-
-const ICON_MAP: Record<string, string> = {
-  business: 'building',
-  property: 'home',
-  vehicle: 'car',
-  personal: 'user',
-};
 
 interface MobileSettingsProps {
   onBack: () => void;
@@ -40,10 +33,7 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
   );
   const createEntity = useMutation(api.entities.create);
 
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState('');
-  const [sub, setSub] = useState('');
-  const [type, setType] = useState<typeof ENTITY_TYPES[number]>('business');
+  const [adding, setAdding] = useState<AddEntityFormValue | null>(null);
   const [deleteEntityId, setDeleteEntityId] = useState<Id<"entities"> | null>(null);
 
   const initials = user?.fullName
@@ -51,18 +41,18 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
     : '?';
 
   async function handleAdd() {
-    if (!name.trim() || !workspace) return;
+    if (!adding?.name.trim() || !workspace) return;
+    const preset = TYPE_PRESETS[adding.type] ?? TYPE_PRESETS.business;
     await createEntity({
       workspaceId: workspace._id,
-      kind: type,
-      name: name.trim(),
-      subtitle: sub.trim() || undefined,
-      icon: ICON_MAP[type] || 'building',
+      kind: adding.type as 'business' | 'property' | 'vehicle' | 'personal',
+      name: adding.name.trim(),
+      subtitle: adding.sub.trim() || preset.subPlaceholder,
+      icon: preset.icon,
       color: ENTITY_COLORS[(entities?.length ?? 0) % ENTITY_COLORS.length],
+      identifiers: adding.info,
     });
-    setName('');
-    setSub('');
-    setAdding(false);
+    setAdding(null);
   }
 
   return (
@@ -127,30 +117,16 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
           </div>
         ))}
         {adding ? (
-          <div style={{ padding: 14 }}>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Entity name"
-              style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--sep)', fontSize: 15, fontFamily: 'var(--font)', outline: 'none', marginBottom: 8 }} />
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <select value={type} onChange={e => setType(e.target.value as typeof ENTITY_TYPES[number])}
-                style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--sep)', fontSize: 14, fontFamily: 'var(--font)', background: '#fff' }}>
-                {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <input value={sub} onChange={e => setSub(e.target.value)} placeholder="Description"
-                style={{ flex: 2, padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--sep)', fontSize: 15, fontFamily: 'var(--font)', outline: 'none' }} />
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setAdding(false)} style={{
-                flex: 1, padding: '9px 0', borderRadius: 8, border: '0.5px solid var(--sep)',
-                background: '#fff', color: 'var(--ink)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
-              }}>Cancel</button>
-              <button onClick={handleAdd} style={{
-                flex: 1, padding: '9px 0', borderRadius: 8, border: 0,
-                background: 'var(--ink)', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
-              }}>Add</button>
-            </div>
+          <div style={{ padding: '4px 14px 14px' }}>
+            <AddEntityForm
+              value={adding}
+              onChange={setAdding}
+              onCancel={() => setAdding(null)}
+              onCommit={handleAdd}
+            />
           </div>
         ) : (
-          <div onClick={() => setAdding(true)} style={{
+          <div onClick={() => setAdding({ type: 'business', name: '', sub: '', info: {} })} style={{
             padding: '12px 14px', cursor: 'pointer',
             display: 'flex', alignItems: 'center', gap: 10,
             color: 'var(--accent)', fontSize: 15, fontWeight: 500,
@@ -164,7 +140,7 @@ export function MobileSettings({ onBack }: MobileSettingsProps) {
         <DeleteEntityModal
           entityId={deleteEntityId}
           onClose={() => setDeleteEntityId(null)}
-          onDeleted={() => { setDeleteEntityId(null); router.push('/files'); }}
+          onDeleted={() => { setDeleteEntityId(null); router.push('/docs'); }}
         />
       )}
     </div>

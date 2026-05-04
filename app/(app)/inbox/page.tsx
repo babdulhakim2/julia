@@ -20,11 +20,11 @@ export default function InboxPage() {
       <div className="lg:hidden" style={{ paddingBottom: 100 }}>
         <InboxView
           onOpenItem={(id) => router.push(`/inbox?item=${id}`)}
-          onOpenEntity={(id) => router.push(`/files/${id}`)}
+          onOpenEntity={(id) => router.push(`/docs/${id}`)}
           onNavigate={(tab) => {
             if (tab === 'ask') router.push('/ask');
             else if (tab === 'calendar') router.push('/calendar');
-            else if (tab === 'entities') router.push('/files');
+            else if (tab === 'entities') router.push('/docs');
           }}
         />
       </div>
