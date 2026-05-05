@@ -9,6 +9,7 @@ import type { Id } from '@/convex/_generated/dataModel';
 import { getIcon } from '@/components/icons';
 import { DeleteEntityModal } from '@/components/shared/delete-entity-modal';
 import { AddEntityForm, TYPE_PRESETS, type AddEntityFormValue } from '@/components/onboarding/add-entity-form';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 const ENTITY_COLORS = [
   'oklch(0.62 0.13 28)', 'oklch(0.62 0.13 80)', 'oklch(0.62 0.10 200)',
@@ -19,14 +20,16 @@ export function DesktopSettings() {
   const { user } = useUser();
   const { signOut } = useClerk();
   const router = useRouter();
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace, isViewingClient } = useActiveWorkspace();
   const entities = useQuery(
     api.entities.listByWorkspace,
     workspace ? { workspaceId: workspace._id } : "skip",
   );
   const createEntity = useMutation(api.entities.create);
+  const updateEntity = useMutation(api.entities.update);
 
   const [adding, setAdding] = useState<AddEntityFormValue | null>(null);
+  const [editing, setEditing] = useState<{ id: Id<"entities">; value: AddEntityFormValue } | null>(null);
   const [deleteEntityId, setDeleteEntityId] = useState<Id<"entities"> | null>(null);
 
   const initials = user?.fullName
@@ -46,6 +49,20 @@ export function DesktopSettings() {
       identifiers: adding.info,
     });
     setAdding(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editing?.value.name.trim()) return;
+    const preset = TYPE_PRESETS[editing.value.type] ?? TYPE_PRESETS.business;
+    await updateEntity({
+      entityId: editing.id,
+      kind: editing.value.type as 'business' | 'property' | 'vehicle' | 'personal',
+      name: editing.value.name.trim(),
+      subtitle: editing.value.sub.trim() || preset.subPlaceholder,
+      icon: preset.icon,
+      identifiers: editing.value.info,
+    });
+    setEditing(null);
   }
 
   return (
@@ -79,9 +96,13 @@ export function DesktopSettings() {
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Entities</div>
-          <button onClick={() => setAdding(adding ? null : { type: 'business', name: '', sub: '', info: {} })} style={{
+          <button disabled={isViewingClient} onClick={() => {
+            setEditing(null);
+            setAdding(adding ? null : { type: 'business', name: '', sub: '', info: {} });
+          }} style={{
             background: 'transparent', border: 0, cursor: 'pointer',
             fontSize: 12, color: 'var(--accent)', fontWeight: 600, fontFamily: 'var(--font)',
+            opacity: isViewingClient ? 0.45 : 1,
           }}>{adding ? 'Cancel' : '+ Add entity'}</button>
         </div>
 
@@ -101,22 +122,51 @@ export function DesktopSettings() {
 
         <div style={{ background: '#FAF9F5', borderRadius: 10, border: '0.5px solid var(--sep)', overflow: 'hidden' }}>
           {(entities ?? []).map((e, i) => (
-            <div key={e._id} style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-              borderBottom: i === (entities?.length ?? 0) - 1 ? 'none' : '0.5px solid var(--hair)',
-            }}>
+            <div key={e._id} style={{ borderBottom: i === (entities?.length ?? 0) - 1 ? 'none' : '0.5px solid var(--hair)' }}>
               <div style={{
-                width: 28, height: 28, borderRadius: 7, background: e.color, color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>{getIcon(e.icon, 14, '#fff')}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{e.name}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{e.subtitle}</div>
+                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+              }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 7, background: e.color, color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>{getIcon(e.icon, 14, '#fff')}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{e.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{e.subtitle}</div>
+                </div>
+                <button disabled={isViewingClient} onClick={() => {
+                  setAdding(null);
+                  setEditing({
+                    id: e._id,
+                    value: {
+                      type: e.kind,
+                      name: e.name,
+                      sub: e.subtitle ?? '',
+                      info: e.identifiers ?? {},
+                    },
+                  });
+                }} style={{
+                  background: 'transparent', border: 0, cursor: 'pointer', padding: 4,
+                  fontSize: 12, color: 'var(--accent)', fontWeight: 600, fontFamily: 'var(--font)',
+                  opacity: isViewingClient ? 0.45 : 1,
+                }}>Edit</button>
+                <button disabled={isViewingClient} onClick={() => setDeleteEntityId(e._id)} style={{
+                  background: 'transparent', border: 0, cursor: 'pointer', padding: 4,
+                  fontSize: 12, color: 'oklch(0.55 0.20 25)', fontWeight: 500, fontFamily: 'var(--font)',
+                  opacity: isViewingClient ? 0.45 : 1,
+                }}>Delete</button>
               </div>
-              <button onClick={() => setDeleteEntityId(e._id)} style={{
-                background: 'transparent', border: 0, cursor: 'pointer', padding: 4,
-                fontSize: 12, color: 'oklch(0.55 0.20 25)', fontWeight: 500, fontFamily: 'var(--font)',
-              }}>Delete</button>
+              {editing?.id === e._id && (
+                <div style={{ padding: '0 14px 14px' }}>
+                  <AddEntityForm
+                    value={editing.value}
+                    onChange={(value) => setEditing({ id: e._id, value })}
+                    onCancel={() => setEditing(null)}
+                    onCommit={handleSaveEdit}
+                    commitLabel="Save"
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -15,6 +15,7 @@ import { askSecretaryStreaming } from '@/lib/assistant-client';
 import { MarkdownMessage } from '@/components/shared/markdown-message';
 import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 import { useSpeechToText } from '@/lib/use-speech-to-text';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface AskViewProps {
   onOpenItem: (id: string) => void;
@@ -42,7 +43,7 @@ export function AskView({ onOpenItem, initialThreadId }: AskViewProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace, isViewingClient } = useActiveWorkspace();
   const threads = useQuery(
     api.chat.listThreads,
     workspace ? { workspaceId: workspace._id } : "skip",
@@ -120,7 +121,7 @@ export function AskView({ onOpenItem, initialThreadId }: AskViewProps) {
     // Ensure thread exists
     let threadId = currentThreadId;
     const isNewThread = !threadId;
-    if (!threadId) {
+    if (!threadId && !isViewingClient) {
       const title = text.length > 50 ? text.slice(0, 50) + '...' : text;
       threadId = await createThread({ workspaceId: workspace._id, title });
       setCurrentThreadId(threadId);
@@ -128,13 +129,15 @@ export function AskView({ onOpenItem, initialThreadId }: AskViewProps) {
     }
 
     // Save user message
-    await addMessageMut({
-      threadId,
-      role: 'user',
-      content: text,
-      citedDocumentIds: [],
-      citedEntityIds: [],
-    });
+    if (threadId && !isViewingClient) {
+      await addMessageMut({
+        threadId,
+        role: 'user',
+        content: text,
+        citedDocumentIds: [],
+        citedEntityIds: [],
+      });
+    }
 
     // Build conversation history from persisted messages
     const history = persistedMessages
@@ -175,23 +178,31 @@ export function AskView({ onOpenItem, initialThreadId }: AskViewProps) {
     }
 
     // Save assistant message
-    await addMessageMut({
-      threadId,
-      role: 'assistant',
-      content: reply.text,
-      citedDocumentIds,
-      citedEntityIds: [],
-      model: reply.source === 'openrouter' ? 'gemini-2.5-flash' : undefined,
-    });
+    if (threadId && !isViewingClient) {
+      await addMessageMut({
+        threadId,
+        role: 'assistant',
+        content: reply.text,
+        citedDocumentIds,
+        citedEntityIds: [],
+        model: reply.source === 'openrouter' ? 'gemini-2.5-flash' : undefined,
+      });
+    }
 
     // Auto-title
-    if (isNewThread) {
+    if (threadId && isNewThread && !isViewingClient) {
       const autoTitle = reply.text.length > 60
         ? reply.text.replace(/[#*_\[\]]/g, '').slice(0, 60).trim() + '...'
         : reply.text.replace(/[#*_\[\]]/g, '').slice(0, 60).trim();
       if (autoTitle) {
         await updateThreadTitle({ threadId, title: autoTitle });
       }
+    }
+
+    if (isViewingClient) {
+      setPendingMessages([userMsg, { from: 'bot', text: reply.text }]);
+      setSending(false);
+      return;
     }
 
     // Clear pending — Convex subscription provides persisted versions

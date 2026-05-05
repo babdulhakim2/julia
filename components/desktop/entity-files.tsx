@@ -15,6 +15,7 @@ import { computeAutoOrganize } from '@/lib/auto-organize';
 import { Toast } from '@/components/ui/toast';
 import { STATUS_META } from '@/lib/data';
 import { DocumentThumb } from '@/components/shared/document-thumb';
+import { BookkeepingPanel } from '@/components/shared/bookkeeping-panel';
 
 interface EntityFilesProps {
   entity: Entity;
@@ -248,6 +249,10 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
               ))}
             </div>
           </div>
+        )}
+
+        {!activeFolderId && entity.type === 'business' && (
+          <BookkeepingPanel entityId={entity.id} entityName={entity.name} />
         )}
 
         {/* Stats strip */}

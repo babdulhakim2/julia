@@ -10,6 +10,7 @@ import { Toast } from '@/components/ui/toast';
 
 interface InspectorProps {
   itemId: string;
+  readOnly?: boolean;
 }
 
 function Field({ label, value, dotColor, last }: { label: string; value?: string; dotColor?: string; last?: boolean }) {
@@ -102,13 +103,12 @@ function PlaceholderPreview({ it }: { it: { issuer?: string; type: string; title
   );
 }
 
-export function DesktopInspector({ itemId }: InspectorProps) {
+export function DesktopInspector({ itemId, readOnly = false }: InspectorProps) {
   const { state, dispatch } = useStore();
   const updateDocument = useMutation(api.documents.update);
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const it = state.items.find(i => i.id === itemId);
-  const e = state.entities.find(x => x.id === it?.entity);
   const meta = it ? STATUS_META[it.status] : null;
 
   if (!it) {
@@ -120,7 +120,7 @@ export function DesktopInspector({ itemId }: InspectorProps) {
   }
 
   async function markHandled() {
-    if (!it || saving || it.status === 'done') return;
+    if (!it || saving || it.status === 'done' || readOnly) return;
     setSaving(true);
     try {
       if (it.convexDocumentId) {
@@ -131,6 +131,22 @@ export function DesktopInspector({ itemId }: InspectorProps) {
       }
       dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { status: 'done' } });
       setToast('Marked as handled');
+      setTimeout(() => setToast(null), 2500);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeEntity(entityId: string) {
+    if (!it?.convexDocumentId || saving || readOnly) return;
+    setSaving(true);
+    try {
+      await updateDocument({
+        documentId: it.convexDocumentId as Id<'documents'>,
+        entityId: entityId as Id<'entities'>,
+      });
+      dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { entity: entityId } });
+      setToast('Document moved');
       setTimeout(() => setToast(null), 2500);
     } finally {
       setSaving(false);
@@ -160,7 +176,20 @@ export function DesktopInspector({ itemId }: InspectorProps) {
         )}
 
         <div style={{ marginTop: 18, background: '#fff', borderRadius: 10, border: '0.5px solid var(--sep)', padding: '4px 14px' }}>
-          <Field label="Entity" value={e?.name} dotColor={e?.color} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '9px 0', borderBottom: '0.5px solid var(--hair)', gap: 14 }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Entity</span>
+            <select value={it.entity ?? ''} onChange={(event) => changeEntity(event.target.value)} disabled={!it.convexDocumentId || saving || readOnly} style={{
+              maxWidth: 170, border: '0.5px solid var(--sep)', borderRadius: 7,
+              background: '#fff', color: 'var(--ink)', padding: '5px 7px',
+              fontSize: 12, fontFamily: 'var(--font)', outline: 'none',
+            }}>
+              <option value="" disabled>Unassigned</option>
+              {state.entities.map(entity => (
+                <option key={entity.id} value={entity.id}>{entity.name}</option>
+              ))}
+            </select>
+          </div>
           {it.amount ? <Field label="Amount" value={`£${it.amount.toLocaleString()}${it.fullAmount ? ` (£${it.fullAmount} after)` : ''}`} /> : null}
           {it.dueDate ? <Field label="Due" value={new Date(it.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} /> : null}
           {it.issuer ? <Field label="Issuer" value={it.issuer} /> : null}
@@ -171,13 +200,13 @@ export function DesktopInspector({ itemId }: InspectorProps) {
 
       {/* Actions */}
       <div style={{ padding: 14, borderTop: '0.5px solid var(--sep)', display: 'flex', gap: 8 }}>
-        <button onClick={markHandled} disabled={saving || it.status === 'done'} style={{
+        <button onClick={markHandled} disabled={saving || it.status === 'done' || readOnly} style={{
           flex: 1, padding: '8px 12px', borderRadius: 8,
           background: it.status === 'done' ? 'rgba(0,0,0,0.08)' : 'var(--ink)',
           color: it.status === 'done' ? 'var(--muted)' : '#fff', border: 0,
-          cursor: saving || it.status === 'done' ? 'default' : 'pointer',
+          cursor: saving || it.status === 'done' || readOnly ? 'default' : 'pointer',
           fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font)',
-        }}>{saving ? 'Marking...' : it.status === 'done' ? 'Handled' : 'Mark handled'}</button>
+        }}>{readOnly ? 'Preview mode' : saving ? 'Marking...' : it.status === 'done' ? 'Handled' : 'Mark handled'}</button>
       </div>
       {toast && <Toast message={toast} variant="success" />}
     </aside>

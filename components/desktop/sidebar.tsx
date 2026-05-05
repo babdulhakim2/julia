@@ -8,6 +8,7 @@ import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useStore } from '@/lib/store';
 import { Ic, getIcon } from '@/components/icons';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface SidebarProps {
   onCapture: () => void;
@@ -19,7 +20,7 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isAdmin = useQuery(api.admin.isAdmin);
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace, isViewingClient } = useActiveWorkspace();
   const convexEntities = useQuery(
     api.entities.listByWorkspace,
     workspace ? { workspaceId: workspace._id } : "skip",
@@ -64,10 +65,11 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
 
       {/* Capture / upload */}
       <div style={{ padding: '0 12px 14px' }}>
-        <button onClick={onCapture} style={{
+        <button onClick={onCapture} disabled={isViewingClient} title={isViewingClient ? 'Exit client view before uploading' : 'Capture or upload'} style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 8,
           padding: '9px 12px', borderRadius: 9,
           background: 'var(--ink)', color: '#fff', border: 0, cursor: 'pointer',
+          opacity: isViewingClient ? 0.45 : 1,
           fontSize: 13.5, fontWeight: 600, fontFamily: 'var(--font)', letterSpacing: -0.1,
         }}>
           {Ic.camera(15, '#fff')} Capture or upload

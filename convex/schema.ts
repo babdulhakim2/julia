@@ -102,6 +102,18 @@ const usageUnit = v.union(
   v.literal("usd_micros"),
 );
 
+const bookkeepingType = v.union(
+  v.literal("income"),
+  v.literal("expense"),
+);
+
+const paymentMethod = v.union(
+  v.literal("cash"),
+  v.literal("card"),
+  v.literal("bank"),
+  v.literal("other"),
+);
+
 const eventKind = v.union(
   v.literal("deadline"),
   v.literal("reminder"),
@@ -324,6 +336,30 @@ export default defineSchema({
       dimensions: documentEmbeddingDimensions,
       filterFields: ["workspaceId", "entityId", "documentId", "documentCategory"],
     }),
+
+  bookkeepingRecords: defineTable({
+    workspaceId: v.id("workspaces"),
+    entityId: v.id("entities"),
+    documentId: v.optional(v.id("documents")),
+    type: bookkeepingType,
+    paymentMethod,
+    recordDate: now,
+    amount: money,
+    description: v.string(),
+    category: v.optional(v.string()),
+    source: v.union(
+      v.literal("manual"),
+      v.literal("document"),
+      v.literal("capture"),
+    ),
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: now,
+    updatedAt: now,
+  })
+    .index("by_workspaceId_and_recordDate", ["workspaceId", "recordDate"])
+    .index("by_entityId_and_recordDate", ["entityId", "recordDate"])
+    .index("by_documentId", ["documentId"]),
 
   processingJobs: defineTable({
     workspaceId: v.id("workspaces"),

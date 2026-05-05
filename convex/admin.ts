@@ -77,6 +77,7 @@ export const dashboard = query({
           q.eq("workspaceId", ws._id),
         )
         .take(5000);
+      const owner = await ctx.db.get(ws.ownerUserId);
 
       const openDocs = documents.filter(
         (d) => d.status !== "done" && d.status !== "archived",
@@ -98,6 +99,8 @@ export const dashboard = query({
       tenants.push({
         id: ws._id,
         name: ws.name,
+        ownerName: owner?.name,
+        ownerEmail: owner?.email,
         plan: ws.plan,
         userCount: memberships.length,
         entityCount: activeEntities.length,

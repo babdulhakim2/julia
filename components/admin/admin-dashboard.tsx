@@ -2,11 +2,15 @@
 
 import React from 'react';
 import { useQuery } from 'convex/react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/convex/_generated/api';
 import { getIcon } from '@/components/icons';
+import { useAdminWorkspaceView } from '@/lib/admin-view';
 
 export function AdminDashboard({ search = '' }: { search?: string }) {
   const data = useQuery(api.admin.dashboard);
+  const router = useRouter();
+  const { setView, workspaceId } = useAdminWorkspaceView();
 
   if (!data) {
     return (
@@ -33,14 +37,16 @@ export function AdminDashboard({ search = '' }: { search?: string }) {
       </div>
 
       <Section title="Tenants" action={`${tenants.length} active`}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.6fr 0.5fr 0.5fr 0.5fr 0.5fr 0.7fr', gap: 0, fontSize: 12, color: 'var(--muted)', fontWeight: 600, padding: '0 12px 8px' }}>
-          <span>Tenant</span><span>Plan</span><span>Users</span><span>Entities</span><span>Docs</span><span>Reminders</span><span>Health</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.55fr 0.45fr 0.5fr 0.5fr 0.5fr 0.65fr 0.7fr', gap: 0, fontSize: 12, color: 'var(--muted)', fontWeight: 600, padding: '0 12px 8px' }}>
+          <span>Tenant</span><span>Plan</span><span>Users</span><span>Entities</span><span>Docs</span><span>Reminders</span><span>Health</span><span></span>
         </div>
         {tenants.map(tenant => (
-          <div key={tenant.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.6fr 0.5fr 0.5fr 0.5fr 0.5fr 0.7fr', gap: 0, alignItems: 'center', padding: '11px 12px', borderTop: '0.5px solid var(--hair)' }}>
+          <div key={tenant.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.55fr 0.45fr 0.5fr 0.5fr 0.5fr 0.65fr 0.7fr', gap: 0, alignItems: 'center', padding: '11px 12px', borderTop: '0.5px solid var(--hair)' }}>
             <div>
               <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 600 }}>{tenant.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tenant.openDocs} open · {tenant.needsReview} review</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                {tenant.ownerEmail || tenant.ownerName || `${tenant.openDocs} open · ${tenant.needsReview} review`}
+              </div>
             </div>
             <Cell>{tenant.plan}</Cell>
             <Cell>{tenant.userCount}</Cell>
@@ -48,6 +54,21 @@ export function AdminDashboard({ search = '' }: { search?: string }) {
             <Cell>{tenant.documentCount}</Cell>
             <Cell>{tenant.reminderCount}</Cell>
             <StatusBadge state={tenant.health === 'healthy' ? 'ready' : tenant.health === 'review' ? 'warning' : 'needs_setup'} label={tenant.health} />
+            <button onClick={() => {
+              setView(tenant.id, tenant.name);
+              router.push('/inbox');
+            }} style={{
+              justifySelf: 'end',
+              padding: '6px 9px',
+              borderRadius: 7,
+              border: workspaceId === tenant.id ? 0 : '0.5px solid var(--sep)',
+              background: workspaceId === tenant.id ? 'var(--ink)' : '#fff',
+              color: workspaceId === tenant.id ? '#fff' : 'var(--accent)',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 700,
+              fontFamily: 'var(--font)',
+            }}>{workspaceId === tenant.id ? 'Viewing' : 'View as'}</button>
           </div>
         ))}
       </Section>

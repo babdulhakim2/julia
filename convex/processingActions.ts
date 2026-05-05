@@ -44,6 +44,11 @@ interface ExtractionResult {
   dueDate?: string;
   extractedFields: Record<string, ExtractedValue>;
   tags: string[];
+  bookkeepingCandidate: boolean;
+  bookkeepingType?: "income" | "expense";
+  paymentMethod?: "cash" | "card" | "bank" | "other";
+  recordDate?: string;
+  bookkeepingCategory?: string;
 }
 
 type TextContentPart = { type: "text"; text: string };
@@ -75,6 +80,11 @@ const DOCUMENT_EXTRACTION_OUTPUT_SCHEMA = {
     "dueDate",
     "extractedFields",
     "tags",
+    "bookkeepingCandidate",
+    "bookkeepingType",
+    "paymentMethod",
+    "recordDate",
+    "bookkeepingCategory",
   ],
   properties: {
     title: { type: "string" },
@@ -103,6 +113,14 @@ const DOCUMENT_EXTRACTION_OUTPUT_SCHEMA = {
       additionalProperties: { type: ["string", "number", "boolean", "null"] },
     },
     tags: { type: "array", items: { type: "string" } },
+    bookkeepingCandidate: { type: "boolean" },
+    bookkeepingType: { type: ["string", "null"], enum: ["income", "expense", null] },
+    paymentMethod: { type: ["string", "null"], enum: ["cash", "card", "bank", "other", null] },
+    recordDate: {
+      type: ["string", "null"],
+      description: "ISO date in YYYY-MM-DD format for bookkeeping record date.",
+    },
+    bookkeepingCategory: { type: ["string", "null"] },
   },
 };
 
@@ -144,6 +162,8 @@ function buildExtractionPrompt(context: {
       "3. Classify category and documentType.",
       "4. Extract issuer, reference, amount, currency, issuedDate, dueDate, summary, tags, and useful fields.",
       "5. Set needsReview when confidence is below 0.8 or when a human should confirm entity, amount, due date, or next action.",
+      "6. For restaurant end-of-day sales screenshots, card-machine settlement photos, receipt photos, supplier invoices, or expense receipts, set bookkeepingCandidate=true.",
+      "7. For bookkeepingCandidate, set bookkeepingType to income for takings/sales/settlements and expense for receipts/invoices/costs. Set paymentMethod to cash/card/bank/other when visible.",
     ].join("\n\n"),
   };
 }
@@ -349,6 +369,32 @@ async function handleDocumentIngest(
     },
   );
 
+  if (
+    extraction.bookkeepingCandidate &&
+    entityId &&
+    extraction.amountMinor !== undefined &&
+    extraction.bookkeepingType
+  ) {
+    await ctx.runMutation(internal.bookkeeping.createFromDocument, {
+      workspaceId: job.workspaceId,
+      entityId,
+      documentId,
+      createdBy: session.createdBy,
+      type: extraction.bookkeepingType,
+      paymentMethod: extraction.paymentMethod ?? "other",
+      recordDate: timestampFromIsoDate(
+        extraction.recordDate ?? extraction.issuedDate ?? extraction.dueDate,
+      ) ?? Date.now(),
+      amount: {
+        amountMinor: Math.abs(Math.round(extraction.amountMinor)),
+        currency: extraction.currency ?? "GBP",
+      },
+      description: extraction.title,
+      category: extraction.bookkeepingCategory ?? extraction.documentType,
+      notes: extraction.summary,
+    });
+  }
+
   for (const file of files) {
     await ctx.runMutation(internal.documentMutations.linkFileToDocument, {
       fileId: file._id,
@@ -498,6 +544,11 @@ function normalizeExtraction(content: string): ExtractionResult {
     dueDate: optionalIsoDate(record.dueDate),
     extractedFields: extractedFields(record.extractedFields),
     tags: stringArray(record.tags),
+    bookkeepingCandidate: booleanValue(record.bookkeepingCandidate, false),
+    bookkeepingType: normalizeBookkeepingType(record.bookkeepingType),
+    paymentMethod: normalizePaymentMethod(record.paymentMethod),
+    recordDate: optionalIsoDate(record.recordDate),
+    bookkeepingCategory: optionalString(record.bookkeepingCategory),
   };
 }
 
@@ -615,6 +666,23 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 function optionalIsoDate(value: unknown) {
   const text = optionalString(value);
   return text && /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : undefined;
+}
+
+function timestampFromIsoDate(date: string | undefined) {
+  if (!date) return undefined;
+  const [year, month, day] = date.split("-").map(Number);
+  const timestamp = Date.UTC(year, month - 1, day, 12);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function normalizeBookkeepingType(value: unknown): "income" | "expense" | undefined {
+  return value === "income" || value === "expense" ? value : undefined;
+}
+
+function normalizePaymentMethod(value: unknown): "cash" | "card" | "bank" | "other" | undefined {
+  return value === "cash" || value === "card" || value === "bank" || value === "other"
+    ? value
+    : undefined;
 }
 
 function extractedFields(value: unknown): Record<string, ExtractedValue> {

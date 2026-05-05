@@ -28,7 +28,7 @@ const ENTITY_COLORS = [
 
 export function OnboardingFlow({ onDone }: OnboardingProps) {
   const { user } = useUser();
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const workspace = useQuery(api.workspaces.getMyWorkspace, {});
   const storeUser = useMutation(api.users.store);
   const createWorkspace = useMutation(api.workspaces.create);
   const createEntity = useMutation(api.entities.create);

@@ -12,6 +12,7 @@ import { DesktopUploadModal } from '@/components/desktop/upload-modal';
 import { CaptureFlow } from '@/components/mobile/capture/capture-flow';
 import { Toast } from '@/components/ui/toast';
 import { ClientRedirect } from '@/components/ui/client-redirect';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 const SELECTED_ITEM_KEY = 'julia-selected-item';
 
@@ -36,7 +37,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Convex-backed onboarding gate
   const me = useQuery(api.users.getMe);
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace, isViewingClient, workspaceName, clearView } = useActiveWorkspace();
   const entities = useQuery(
     api.entities.listByWorkspace,
     workspace ? { workspaceId: workspace._id } : "skip",
@@ -123,14 +124,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return null;
   }
 
+  if (workspace === null && isViewingClient) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, color: 'var(--muted)', fontSize: 14 }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 16, color: 'var(--ink)', fontWeight: 700, marginBottom: 8 }}>Client workspace unavailable</div>
+          <button onClick={clearView} style={{
+            border: 0, borderRadius: 8, background: 'var(--ink)', color: '#fff',
+            padding: '8px 12px', cursor: 'pointer', fontFamily: 'var(--font)', fontWeight: 700,
+          }}>Exit client view</button>
+        </div>
+      </div>
+    );
+  }
+
   // Onboarding gate: incomplete user, no workspace, or no entities → redirect
-  if (!me.onboardingComplete || workspace === null || (entities !== undefined && entities.length === 0)) {
+  if (!isViewingClient && (!me.onboardingComplete || workspace === null || (entities !== undefined && entities.length === 0))) {
     return <ClientRedirect href="/onboarding" />;
   }
 
   // Still loading entities
-  if (entities === undefined) {
+  if (workspace === null || entities === undefined) {
     return null;
+  }
+
+  function openCapture() {
+    if (isViewingClient) {
+      setFiledToast('Exit client view before uploading');
+      setTimeout(() => setFiledToast(null), 2600);
+      return;
+    }
+    setCaptureOpen(true);
   }
 
   // Mobile capture flow (full screen takeover)
@@ -145,12 +169,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             gridTemplateColumns: '248px 1fr 380px',
             background: '#fff', color: 'var(--ink)', fontFamily: 'var(--font)', overflow: 'hidden',
           }}>
-            <DesktopSidebar onCapture={() => setCaptureOpen(true)} />
+            <DesktopSidebar onCapture={openCapture} />
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid var(--sep)' }}>
               {children}
             </div>
-            <DesktopInspector itemId={selectedItemId} />
+            <DesktopInspector itemId={selectedItemId} readOnly={isViewingClient} />
           </div>
+          {isViewingClient && <AdminViewBanner name={workspace.name || workspaceName} onExit={clearView} />}
           <DesktopUploadModal onClose={() => setCaptureOpen(false)} />
         </div>
         {/* Mobile capture flow */}
@@ -176,11 +201,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         gridTemplateColumns: '248px 1fr 380px',
         background: '#fff', color: 'var(--ink)', fontFamily: 'var(--font)', overflow: 'hidden',
       }}>
-        <DesktopSidebar onCapture={() => setCaptureOpen(true)} />
+        <DesktopSidebar onCapture={openCapture} />
         <main style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid var(--sep)' }}>
           {children}
         </main>
-        <DesktopInspector itemId={selectedItemId} />
+        <DesktopInspector itemId={selectedItemId} readOnly={isViewingClient} />
+        {isViewingClient && <AdminViewBanner name={workspace.name || workspaceName} onExit={clearView} />}
       </div>
 
       {/* Mobile layout */}
@@ -191,10 +217,49 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {children}
         </div>
-        <TabBar onCapture={() => setCaptureOpen(true)} />
+        <TabBar onCapture={openCapture} />
+        {isViewingClient && <AdminViewBanner name={workspace.name || workspaceName} onExit={clearView} mobile />}
         {filedToast && <Toast message={filedToast} />}
       </div>
     </SelectedItemContext.Provider>
+  );
+}
+
+function AdminViewBanner({ name, onExit, mobile }: { name: string; onExit: () => void; mobile?: boolean }) {
+  return (
+    <div style={{
+      position: 'absolute',
+      top: mobile ? 8 : 12,
+      left: mobile ? 10 : '50%',
+      right: mobile ? 10 : 'auto',
+      transform: mobile ? 'none' : 'translateX(-50%)',
+      zIndex: 80,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '8px 10px 8px 12px',
+      borderRadius: 999,
+      background: 'rgba(28,28,30,0.94)',
+      color: '#fff',
+      boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+      fontFamily: 'var(--font)',
+      pointerEvents: 'auto',
+    }}>
+      <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        Viewing client: {name}
+      </span>
+      <button onClick={onExit} style={{
+        border: 0,
+        borderRadius: 999,
+        background: 'rgba(255,255,255,0.16)',
+        color: '#fff',
+        padding: '5px 8px',
+        cursor: 'pointer',
+        fontSize: 12,
+        fontWeight: 700,
+        fontFamily: 'var(--font)',
+      }}>Exit</button>
+    </div>
   );
 }
 

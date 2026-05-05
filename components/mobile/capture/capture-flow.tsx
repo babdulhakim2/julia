@@ -8,6 +8,7 @@ import type { CapturedPage } from '@/lib/types';
 import { Ic } from '@/components/icons';
 import { Btn } from '@/components/ui/button';
 import { DocPreview } from '@/components/ui/doc-preview';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface CaptureFlowProps {
   onClose: () => void;
@@ -19,8 +20,19 @@ interface LocalCapturedPage extends CapturedPage {
   fileName: string;
 }
 
+interface CapturePreviewResponse {
+  ok: boolean;
+  title?: string;
+  documentType?: string;
+  issuer?: string | null;
+  entityId?: string | null;
+  confidence?: number;
+  reason?: string | null;
+  fields?: { k: string; v: string }[];
+}
+
 export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace } = useActiveWorkspace();
   const entities = useQuery(
     api.entities.listByWorkspace,
     workspace ? { workspaceId: workspace._id } : "skip",
@@ -36,6 +48,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [showEntityPicker, setShowEntityPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mappingStatus, setMappingStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialPickerOpenedRef = useRef(false);
   const objectUrlsRef = useRef<Set<string>>(new Set());
@@ -67,10 +80,13 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     if (files.length === 0) return;
 
     setError(null);
+    setMappingStatus('Checking likely entity...');
     setStage('extracting');
 
+    const allFiles = [...capturedFiles, ...files];
     setCapturedFiles(prev => [...prev, ...files]);
 
+    const startIndex = pages.length;
     setPages(prev => {
       const created = files.map((file, index): LocalCapturedPage => {
         const previewUrl = URL.createObjectURL(file);
@@ -93,9 +109,75 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     });
 
     setTimeout(() => setStage('review'), 300);
+    void classifyCapturePreview(allFiles, startIndex, files.length);
 
     // Reset input so same file can be selected again
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function classifyCapturePreview(allFiles: File[], startIndex: number, count: number) {
+    if (!entities || entities.length === 0) {
+      setMappingStatus(null);
+      return;
+    }
+
+    try {
+      const imagePages = await Promise.all(
+        allFiles
+          .filter(file => file.type.startsWith('image/'))
+          .slice(0, 3)
+          .map(async file => ({
+            name: file.name,
+            dataUrl: await fileToPreviewDataUrl(file),
+          })),
+      );
+      const pagesForAi = imagePages.filter(page => page.dataUrl);
+      if (pagesForAi.length === 0) {
+        setMappingStatus(null);
+        return;
+      }
+
+      const res = await fetch('/api/ai/capture-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pages: pagesForAi,
+          entities: entities.map(entity => ({
+            id: entity._id,
+            kind: entity.kind,
+            name: entity.name,
+            subtitle: entity.subtitle,
+            identifiers: entity.identifiers,
+          })),
+        }),
+      });
+      const data = await res.json() as CapturePreviewResponse;
+      if (!res.ok || !data.ok) throw new Error('Preview classification failed');
+
+      const entity = data.entityId
+        ? entities.find(item => item._id === data.entityId)
+        : null;
+      setPages(prev => prev.map((page, index) => {
+        const inCurrentDocument = index < startIndex + count || count === allFiles.length;
+        if (!inCurrentDocument) return page;
+        return {
+          ...page,
+          title: data.title || page.title,
+          type: data.documentType || page.type,
+          issuer: data.issuer || (entity ? `Likely ${entity.name}` : page.issuer),
+          entity: entity?._id ?? page.entity,
+          confidence: data.confidence ?? page.confidence,
+          fields: data.fields?.length ? data.fields : page.fields,
+          action: data.reason || page.action,
+        };
+      }));
+      setMappingStatus(entity
+        ? `Matched to ${entity.name}${data.confidence !== undefined ? ` · ${Math.round(data.confidence * 100)}%` : ''}`
+        : 'No confident entity match yet');
+      window.setTimeout(() => setMappingStatus(null), 2500);
+    } catch {
+      setMappingStatus(null);
+    }
   }
 
   async function handleFile() {
@@ -334,6 +416,14 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
             </div>
           )}
 
+          {mappingStatus && (
+            <div style={{ margin: '10px 16px 0', padding: '10px 12px', borderRadius: 10,
+              background: 'var(--accent-soft)', color: 'var(--ink)',
+              fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 7 }}>
+              {Ic.sparkle(13, 'var(--accent)')} {mappingStatus}
+            </div>
+          )}
+
           {/* Entity assignment */}
           {activeEntity && (
             <div style={{ padding: '12px 16px 0' }}>
@@ -491,4 +581,41 @@ function PagePreview({ page, height }: { page: LocalCapturedPage; height: number
     );
   }
   return <DocPreview kind={page.preview} height={height} />;
+}
+
+async function fileToPreviewDataUrl(file: File) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = objectUrl;
+    });
+
+    const maxSide = 1200;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return await readFileAsDataUrl(file);
+    ctx.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.72);
+  } catch {
+    return await readFileAsDataUrl(file);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }

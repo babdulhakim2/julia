@@ -11,6 +11,7 @@ import { Ic } from '@/components/icons';
 import { MarkdownMessage } from '@/components/shared/markdown-message';
 import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 import { useSpeechToText } from '@/lib/use-speech-to-text';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface ChatMessage {
   from: 'user' | 'bot';
@@ -50,7 +51,7 @@ export function DesktopAsk({ initialThreadId }: DesktopAskProps) {
     try { localStorage.setItem(SIDEBAR_KEY, String(sidebarOpen)); } catch {}
   }, [sidebarOpen]);
 
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace, isViewingClient } = useActiveWorkspace();
   const threads = useQuery(
     api.chat.listThreads,
     workspace ? { workspaceId: workspace._id } : "skip",
@@ -122,7 +123,7 @@ export function DesktopAsk({ initialThreadId }: DesktopAskProps) {
     // Ensure thread exists
     let threadId = currentThreadId;
     const isNewThread = !threadId;
-    if (!threadId) {
+    if (!threadId && !isViewingClient) {
       const title = t.length > 50 ? t.slice(0, 50) + '...' : t;
       threadId = await createThread({ workspaceId: workspace._id, title });
       setCurrentThreadId(threadId);
@@ -130,13 +131,15 @@ export function DesktopAsk({ initialThreadId }: DesktopAskProps) {
     }
 
     // Save user message
-    await addMessage({
-      threadId,
-      role: 'user',
-      content: t,
-      citedDocumentIds: [],
-      citedEntityIds: [],
-    });
+    if (threadId && !isViewingClient) {
+      await addMessage({
+        threadId,
+        role: 'user',
+        content: t,
+        citedDocumentIds: [],
+        citedEntityIds: [],
+      });
+    }
 
     // Build conversation history from persisted messages
     const history = persistedMessages
@@ -177,23 +180,31 @@ export function DesktopAsk({ initialThreadId }: DesktopAskProps) {
     }
 
     // Save assistant message
-    await addMessage({
-      threadId,
-      role: 'assistant',
-      content: reply.text,
-      citedDocumentIds,
-      citedEntityIds: [],
-      model: reply.source === 'openrouter' ? 'gemini-2.5-flash' : undefined,
-    });
+    if (threadId && !isViewingClient) {
+      await addMessage({
+        threadId,
+        role: 'assistant',
+        content: reply.text,
+        citedDocumentIds,
+        citedEntityIds: [],
+        model: reply.source === 'openrouter' ? 'gemini-2.5-flash' : undefined,
+      });
+    }
 
     // Auto-title after first AI response on a new thread
-    if (isNewThread) {
+    if (threadId && isNewThread && !isViewingClient) {
       const autoTitle = reply.text.length > 60
         ? reply.text.replace(/[#*_\[\]]/g, '').slice(0, 60).trim() + '...'
         : reply.text.replace(/[#*_\[\]]/g, '').slice(0, 60).trim();
       if (autoTitle) {
         await updateThreadTitle({ threadId, title: autoTitle });
       }
+    }
+
+    if (isViewingClient) {
+      setPendingMessages([userMsg, { from: 'bot', text: reply.text }]);
+      setSending(false);
+      return;
     }
 
     // Clear pending messages — Convex subscription will provide persisted versions

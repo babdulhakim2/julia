@@ -61,6 +61,48 @@ export const create = mutation({
 });
 
 /**
+ * Updates an existing entity. Used by settings on desktop and mobile.
+ */
+export const update = mutation({
+  args: {
+    entityId: v.id("entities"),
+    kind: v.optional(v.union(
+      v.literal("business"),
+      v.literal("property"),
+      v.literal("vehicle"),
+      v.literal("personal"),
+    )),
+    name: v.optional(v.string()),
+    subtitle: v.optional(v.string()),
+    icon: v.optional(v.string()),
+    color: v.optional(v.string()),
+    identifiers: v.optional(v.record(v.string(), v.string())),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const entity = await ctx.db.get(args.entityId);
+    if (!entity) throw new Error("Entity not found");
+    await requireWorkspaceMember(ctx, entity.workspaceId);
+
+    const updates: Record<string, unknown> = { updatedAt: Date.now() };
+    if (args.kind !== undefined) updates.kind = args.kind;
+    if (args.name !== undefined) {
+      const name = args.name.trim();
+      if (!name) throw new Error("Entity name is required");
+      updates.name = name;
+      updates.normalizedName = name.toLowerCase();
+    }
+    if (args.subtitle !== undefined) updates.subtitle = args.subtitle.trim() || undefined;
+    if (args.icon !== undefined) updates.icon = args.icon;
+    if (args.color !== undefined) updates.color = args.color;
+    if (args.identifiers !== undefined) updates.identifiers = args.identifiers;
+    if (args.notes !== undefined) updates.notes = args.notes.trim() || undefined;
+
+    await ctx.db.patch(args.entityId, updates);
+  },
+});
+
+/**
  * Soft-deletes an entity by setting status to "archived".
  */
 export const archive = mutation({

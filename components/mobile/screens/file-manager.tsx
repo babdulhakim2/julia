@@ -17,6 +17,7 @@ import { computeAutoOrganize } from '@/lib/auto-organize';
 import { Toast } from '@/components/ui/toast';
 import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 import { DocumentThumb } from '@/components/shared/document-thumb';
+import { BookkeepingPanel } from '@/components/shared/bookkeeping-panel';
 import type { Folder, Item } from '@/lib/types';
 
 interface FileManagerProps {
@@ -180,6 +181,10 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
               </div>
             )}
           </div>
+        )}
+
+        {!activeFolder && e.type === 'business' && (
+          <BookkeepingPanel entityId={e.id} entityName={e.name} compact />
         )}
 
         {/* Toolbar */}

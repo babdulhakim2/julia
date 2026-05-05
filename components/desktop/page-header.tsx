@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useAction, useQuery } from 'convex/react';
+import { useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { Ic } from '@/components/icons';
 import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface PageHeaderProps {
   title: string;
@@ -28,7 +29,7 @@ interface SearchResult {
 }
 
 export function PageHeader({ title, subtitle, search, setSearch, semanticSearch = false, semanticEntityId }: PageHeaderProps) {
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace } = useActiveWorkspace();
   const runSearch = useAction(api.search.semanticSearch);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);

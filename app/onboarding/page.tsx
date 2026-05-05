@@ -13,7 +13,7 @@ export default function OnboardingPage() {
   const syncStarted = useRef(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const me = useQuery(api.users.getMe);
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const workspace = useQuery(api.workspaces.getMyWorkspace, {});
   const entities = useQuery(
     api.entities.listByWorkspace,
     workspace ? { workspaceId: workspace._id } : "skip",

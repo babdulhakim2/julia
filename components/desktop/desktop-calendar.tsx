@@ -20,6 +20,7 @@ import {
   startOfMonth,
   type CalendarEntry,
 } from '@/lib/calendar';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface CalendarProps {
   items: Item[];
@@ -33,7 +34,7 @@ export function DesktopCalendar({ items, ent, onSelect, onDocumentPreview }: Cal
   const [month, setMonth] = useState(() => startOfMonth(new Date(`${TODAY}T12:00:00`)));
   const [selectedDate, setSelectedDate] = useState(TODAY);
   const [addDate, setAddDate] = useState<string | null>(null);
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace, isViewingClient } = useActiveWorkspace();
   const range = useMemo(() => monthRange(month), [month]);
   const convexEvents = useQuery(
     api.events.listByWorkspace,
@@ -69,6 +70,7 @@ export function DesktopCalendar({ items, ent, onSelect, onDocumentPreview }: Cal
   const monthLabel = month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
   async function handleAdd(event: CalendarEventDraft) {
+    if (isViewingClient) return;
     if (workspace) {
       await createEvent({
         workspaceId: workspace._id,
@@ -87,6 +89,7 @@ export function DesktopCalendar({ items, ent, onSelect, onDocumentPreview }: Cal
   }
 
   async function handleRemove(entry: CalendarEntry) {
+    if (isViewingClient) return;
     if (entry.eventId) {
       await removeEvent({ eventId: entry.eventId as Id<'events'> });
       return;
@@ -100,11 +103,12 @@ export function DesktopCalendar({ items, ent, onSelect, onDocumentPreview }: Cal
     <div style={{ padding: '16px 24px 30px', display: 'flex', flexWrap: 'wrap', gap: 18, minHeight: 0, alignItems: 'flex-start' }}>
       <section style={{ flex: '1 1 420px', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <button onClick={() => setAddDate(selectedDate)} style={{
+          <button disabled={isViewingClient} onClick={() => setAddDate(selectedDate)} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '7px 12px', borderRadius: 7,
             background: 'var(--ink)', color: '#fff', border: 0, cursor: 'pointer',
             fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font)',
+            opacity: isViewingClient ? 0.45 : 1,
           }}>{Ic.plus(13, '#fff', 2.4)} Add event</button>
           <button onClick={() => {
             const today = new Date(`${TODAY}T12:00:00`);
@@ -185,9 +189,10 @@ export function DesktopCalendar({ items, ent, onSelect, onDocumentPreview }: Cal
         </div>
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {selectedEntries.length === 0 ? (
-            <button onClick={() => setAddDate(selectedDate)} style={{
+            <button disabled={isViewingClient} onClick={() => setAddDate(selectedDate)} style={{
               padding: 14, borderRadius: 8, border: '1px dashed var(--sep)', background: '#fff',
               color: 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
+              opacity: isViewingClient ? 0.45 : 1,
             }}>Add event</button>
           ) : selectedEntries.map(entry => {
             const entity = ent[entry.entityId ?? ''];

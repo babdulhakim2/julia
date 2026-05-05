@@ -5,6 +5,7 @@ import { Ic } from '@/components/icons';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface UploadModalProps {
   onClose: () => void;
@@ -45,11 +46,15 @@ function supportedFile(file: File) {
 }
 
 export function DesktopUploadModal({ onClose }: UploadModalProps) {
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace } = useActiveWorkspace();
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const storeDocumentFile = useMutation(api.files.storeDocumentFile);
   const createCaptureSession = useMutation(api.captureSessions.create);
   const createProcessingJob = useMutation(api.processingJobs.create);
+  const entities = useQuery(
+    api.entities.listByWorkspace,
+    workspace ? { workspaceId: workspace._id } : 'skip',
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectUrlsRef = useRef<Set<string>>(new Set());
@@ -58,6 +63,7 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
   const [activeSessionId, setActiveSessionId] = useState<Id<'captureSessions'> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedEntityId, setSelectedEntityId] = useState('');
   const activeSession = useQuery(
     api.captureSessions.get,
     activeSessionId ? { sessionId: activeSessionId } : 'skip',
@@ -140,6 +146,7 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
         workspaceId: workspace._id,
         source: 'upload',
         pageCount: uploadEntries.length,
+        entityId: selectedEntityId ? selectedEntityId as Id<'entities'> : undefined,
       });
       setActiveSessionId(sessionId);
 
@@ -340,6 +347,24 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {files.length > 0 && (entities?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                File under
+              </div>
+              <select value={selectedEntityId} onChange={event => setSelectedEntityId(event.target.value)} style={{
+                width: '100%', border: '0.5px solid var(--sep)', borderRadius: 8,
+                background: '#fff', color: 'var(--ink)', padding: '9px 10px',
+                fontSize: 13, fontFamily: 'var(--font)', outline: 'none',
+              }}>
+                <option value="">Let Julia infer it</option>
+                {(entities ?? []).map(entity => (
+                  <option key={entity._id} value={entity._id}>{entity.name}</option>
+                ))}
+              </select>
             </div>
           )}
 

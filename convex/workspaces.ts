@@ -6,8 +6,8 @@ import { requireUser } from "./lib/auth";
  * Returns the authenticated user's default workspace, or null.
  */
 export const getMyWorkspace = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { viewWorkspaceId: v.optional(v.id("workspaces")) },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
 
@@ -17,6 +17,11 @@ export const getMyWorkspace = query({
         q.eq("tokenIdentifier", identity.tokenIdentifier),
       )
       .unique();
+
+    if (args.viewWorkspaceId) {
+      if (user?.isAdmin !== true) throw new Error("Not authorized");
+      return await ctx.db.get(args.viewWorkspaceId);
+    }
 
     if (!user?.defaultWorkspaceId) return null;
 

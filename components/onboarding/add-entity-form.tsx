@@ -17,6 +17,7 @@ interface AddEntityFormProps {
   onChange: (v: AddEntityFormValue) => void;
   onCancel: () => void;
   onCommit: () => void;
+  commitLabel?: string;
 }
 
 export interface AddEntityFormValue {
@@ -26,7 +27,7 @@ export interface AddEntityFormValue {
   info: Record<string, string>;
 }
 
-export function AddEntityForm({ value, onChange, onCancel, onCommit }: AddEntityFormProps) {
+export function AddEntityForm({ value, onChange, onCancel, onCommit, commitLabel = 'Add' }: AddEntityFormProps) {
   const types = [
     { id: 'business', label: 'Business' },
     { id: 'property', label: 'Property' },
@@ -107,7 +108,7 @@ export function AddEntityForm({ value, onChange, onCancel, onCommit }: AddEntity
 
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
         <Btn variant="secondary" size="md" style={{ flex: 1 }} onClick={onCancel}>Cancel</Btn>
-        <Btn variant="dark" size="md" style={{ flex: 2 }} onClick={onCommit} disabled={!value.name?.trim()}>Add</Btn>
+        <Btn variant="dark" size="md" style={{ flex: 2 }} onClick={onCommit} disabled={!value.name?.trim()}>{commitLabel}</Btn>
       </div>
     </div>
   );

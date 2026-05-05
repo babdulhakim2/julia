@@ -25,6 +25,7 @@ import {
   startOfMonth,
   type CalendarEntry,
 } from '@/lib/calendar';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface CalendarViewProps {
   onOpenItem: (id: string) => void;
@@ -36,7 +37,7 @@ export function CalendarView({ onOpenItem, onDocumentPreview }: CalendarViewProp
   const [month, setMonth] = useState(() => startOfMonth(new Date(`${TODAY}T12:00:00`)));
   const [selectedDate, setSelectedDate] = useState(TODAY);
   const [addDate, setAddDate] = useState<string | null>(null);
-  const workspace = useQuery(api.workspaces.getMyWorkspace);
+  const { workspace, isViewingClient } = useActiveWorkspace();
   const range = useMemo(() => monthRange(month), [month]);
   const convexEvents = useQuery(
     api.events.listByWorkspace,
@@ -74,6 +75,7 @@ export function CalendarView({ onOpenItem, onDocumentPreview }: CalendarViewProp
   const monthLabel = month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
   async function handleAdd(event: CalendarEventDraft) {
+    if (isViewingClient) return;
     if (workspace) {
       await createEvent({
         workspaceId: workspace._id,
@@ -92,6 +94,7 @@ export function CalendarView({ onOpenItem, onDocumentPreview }: CalendarViewProp
   }
 
   async function handleRemove(entry: CalendarEntry) {
+    if (isViewingClient) return;
     if (entry.eventId) {
       await removeEvent({ eventId: entry.eventId as Id<'events'> });
       return;
@@ -104,7 +107,7 @@ export function CalendarView({ onOpenItem, onDocumentPreview }: CalendarViewProp
   return (
     <div style={{ paddingBottom: 120 }}>
       <NavBar large title="Calendar" sub={`${monthLabel} · ${openCount} open`}
-        trailing={<NavBtn onClick={() => setAddDate(selectedDate)}>{Ic.calendarPlus(22, 'var(--accent)')}</NavBtn>} />
+        trailing={<NavBtn onClick={() => { if (!isViewingClient) setAddDate(selectedDate); }}>{Ic.calendarPlus(22, isViewingClient ? 'var(--muted)' : 'var(--accent)')}</NavBtn>} />
 
       <div style={{ padding: '0 16px' }}>
         <div style={{ background: '#fff', borderRadius: 8, padding: 12, border: '0.5px solid var(--sep)' }}>
@@ -164,9 +167,10 @@ export function CalendarView({ onOpenItem, onDocumentPreview }: CalendarViewProp
 
       <ListGroup header={new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}>
         {selectedEntries.length === 0 ? (
-          <button onClick={() => setAddDate(selectedDate)} style={{
+          <button disabled={isViewingClient} onClick={() => setAddDate(selectedDate)} style={{
             width: '100%', padding: '14px', border: 0, background: 'transparent',
             color: 'var(--accent)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
+            opacity: isViewingClient ? 0.45 : 1,
           }}>Add event</button>
         ) : selectedEntries.map((entry, i) => {
           const e = ent[entry.entityId ?? ''];
