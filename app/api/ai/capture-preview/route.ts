@@ -3,6 +3,7 @@ import { OPENROUTER_BASE_URL } from "@/lib/openrouter";
 
 const FLASH_LITE_MODEL = "google/gemini-2.5-flash-lite";
 const FLASH_MODEL = "google/gemini-2.5-flash";
+const MIN_ENTITY_CONFIDENCE = 0.78;
 
 interface CapturePreviewBody {
   pages?: Array<{
@@ -161,7 +162,8 @@ async function classify(
 
   const parsed = JSON.parse(content.replace(/^```json?\s*/i, "").replace(/\s*```\s*$/i, "").trim()) as Record<string, unknown>;
   const entityIds = new Set(entities.map(entity => entity.id));
-  const entityId = typeof parsed.entityId === "string" && entityIds.has(parsed.entityId)
+  const confidence = typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0;
+  const entityId = typeof parsed.entityId === "string" && entityIds.has(parsed.entityId) && confidence >= MIN_ENTITY_CONFIDENCE
     ? parsed.entityId
     : null;
 
@@ -171,7 +173,7 @@ async function classify(
     documentType: typeof parsed.documentType === "string" && parsed.documentType.trim() ? parsed.documentType.trim() : "Document",
     issuer: typeof parsed.issuer === "string" && parsed.issuer.trim() ? parsed.issuer.trim() : null,
     entityId,
-    confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
+    confidence,
     reason: typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : null,
     fields: Array.isArray(parsed.fields)
       ? parsed.fields

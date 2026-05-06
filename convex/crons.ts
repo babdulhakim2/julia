@@ -53,48 +53,35 @@ export const getRunningJobs = internalQuery({
 /**
  * Refreshes document statuses based on current date.
  * - scheduled + dueAt within 7 days → due_soon
- * - scheduled/due_soon + dueAt in the past → overdue
+ * - scheduled/due_soon/needs_review + dueAt in the past → overdue
  */
 export const refreshDocumentStatuses = internalMutation({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
     const now = Date.now();
     let updated = 0;
+    const statuses = ["scheduled", "due_soon", "needs_review"] as const;
 
-    // Find documents that are scheduled but may now be due_soon or overdue
-    const scheduledDocs = await ctx.db
-      .query("documents")
-      .withIndex("by_workspaceId_and_status", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("status", "scheduled"),
-      )
-      .take(200);
+    for (const status of statuses) {
+      const docs = await ctx.db
+        .query("documents")
+        .withIndex("by_workspaceId_and_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", status),
+        )
+        .take(200);
 
-    for (const doc of scheduledDocs) {
-      if (!doc.dueAt) continue;
-      let newStatus: "due_soon" | "overdue" | null = null;
-      if (doc.dueAt < now) {
-        newStatus = "overdue";
-      } else if (doc.dueAt <= now + DUE_SOON_MS) {
-        newStatus = "due_soon";
-      }
-      if (newStatus) {
-        await ctx.db.patch(doc._id, { status: newStatus, updatedAt: now });
-        updated++;
-      }
-    }
-
-    // Find documents that are due_soon but may now be overdue
-    const dueSoonDocs = await ctx.db
-      .query("documents")
-      .withIndex("by_workspaceId_and_status", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("status", "due_soon"),
-      )
-      .take(200);
-
-    for (const doc of dueSoonDocs) {
-      if (doc.dueAt && doc.dueAt < now) {
-        await ctx.db.patch(doc._id, { status: "overdue", updatedAt: now });
-        updated++;
+      for (const doc of docs) {
+        if (!doc.dueAt) continue;
+        let newStatus: "due_soon" | "overdue" | null = null;
+        if (doc.dueAt < now) {
+          newStatus = "overdue";
+        } else if (doc.dueAt <= now + DUE_SOON_MS && doc.status !== "due_soon") {
+          newStatus = "due_soon";
+        }
+        if (newStatus) {
+          await ctx.db.patch(doc._id, { status: newStatus, updatedAt: now });
+          updated++;
+        }
       }
     }
 

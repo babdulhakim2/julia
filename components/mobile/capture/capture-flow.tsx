@@ -16,8 +16,9 @@ interface CaptureFlowProps {
 }
 
 interface LocalCapturedPage extends CapturedPage {
-  previewUrl: string;
+  previewUrl?: string;
   fileName: string;
+  contentType: string;
 }
 
 interface CapturePreviewResponse {
@@ -29,6 +30,55 @@ interface CapturePreviewResponse {
   confidence?: number;
   reason?: string | null;
   fields?: { k: string; v: string }[];
+}
+
+const ACCEPTED_DOCUMENTS = [
+  'image/*',
+  '.pdf',
+  '.txt',
+  '.csv',
+  '.json',
+  '.doc',
+  '.docx',
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'application/json',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+].join(',');
+
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+function supportedFile(file: File) {
+  const extension = file.name.toLowerCase().split('.').pop();
+  return (
+    isImageFile(file) ||
+    ['pdf', 'txt', 'csv', 'json', 'doc', 'docx'].includes(extension ?? '')
+  );
+}
+
+function isImageFile(file: File) {
+  const extension = file.name.toLowerCase().split('.').pop();
+  return file.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif'].includes(extension ?? '');
+}
+
+function contentTypeFor(file: File, source: 'camera' | 'upload') {
+  if (file.type) return file.type;
+  const extension = file.name.toLowerCase().split('.').pop();
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'txt') return 'text/plain';
+  if (extension === 'csv') return 'text/csv';
+  if (extension === 'json') return 'application/json';
+  if (extension === 'doc') return 'application/msword';
+  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (['png'].includes(extension ?? '')) return 'image/png';
+  if (['webp'].includes(extension ?? '')) return 'image/webp';
+  if (['gif'].includes(extension ?? '')) return 'image/gif';
+  if (extension === 'heic') return 'image/heic';
+  if (extension === 'heif') return 'image/heif';
+  if (['jpg', 'jpeg'].includes(extension ?? '') || source === 'camera') return 'image/jpeg';
+  return 'application/octet-stream';
 }
 
 export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
@@ -45,11 +95,13 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   const [stage, setStage] = useState<'aim' | 'capturing' | 'extracting' | 'review' | 'uploading'>('aim');
   const [pages, setPages] = useState<LocalCapturedPage[]>([]);
   const [capturedFiles, setCapturedFiles] = useState<File[]>([]);
+  const [sessionSource, setSessionSource] = useState<'camera' | 'upload'>('camera');
   const [activeIdx, setActiveIdx] = useState(0);
   const [showEntityPicker, setShowEntityPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mappingStatus, setMappingStatus] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const initialPickerOpenedRef = useRef(false);
   const objectUrlsRef = useRef<Set<string>>(new Set());
 
@@ -65,22 +117,34 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     if (initialPickerOpenedRef.current || stage !== 'aim' || pages.length > 0) return;
     initialPickerOpenedRef.current = true;
     const id = window.setTimeout(() => {
-      fileInputRef.current?.click();
+      cameraInputRef.current?.click();
     }, 0);
     return () => window.clearTimeout(id);
   }, [pages.length, stage]);
 
-  // Use the file input as a camera stand-in (on mobile it opens camera with capture attr)
-  function trigger() {
-    fileInputRef.current?.click();
+  function triggerCamera() {
+    setSessionSource(current => current === 'upload' ? current : 'camera');
+    cameraInputRef.current?.click();
   }
 
-  function handleCapture(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
+  function triggerUpload() {
+    setSessionSource('upload');
+    uploadInputRef.current?.click();
+  }
+
+  function handleFiles(e: React.ChangeEvent<HTMLInputElement>, source: 'camera' | 'upload') {
+    const selectedFiles = Array.from(e.target.files ?? []);
+    if (selectedFiles.length === 0) return;
+    const files = selectedFiles.filter(file => supportedFile(file) && file.size <= MAX_FILE_BYTES);
+    if (files.length === 0) {
+      setError('Use images, PDFs, text files, or Word documents under 25 MB.');
+      if (e.currentTarget) e.currentTarget.value = '';
+      return;
+    }
 
     setError(null);
-    setMappingStatus('Checking likely entity...');
+    if (source === 'upload') setSessionSource('upload');
+    setMappingStatus(files.some(isImageFile) ? 'Checking likely entity...' : null);
     setStage('extracting');
 
     const allFiles = [...capturedFiles, ...files];
@@ -89,16 +153,18 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     const startIndex = pages.length;
     setPages(prev => {
       const created = files.map((file, index): LocalCapturedPage => {
-        const previewUrl = URL.createObjectURL(file);
-        objectUrlsRef.current.add(previewUrl);
+        const contentType = contentTypeFor(file, source);
+        const previewUrl = isImageFile(file) ? URL.createObjectURL(file) : undefined;
+        if (previewUrl) objectUrlsRef.current.add(previewUrl);
         return {
           preview: 'lambeth',
           previewUrl,
+          contentType,
           fileName: file.name || `capture-${prev.length + index + 1}.jpg`,
           type: 'Document page',
           issuer: 'Ready to send',
           title: file.name ? file.name.replace(/\.[^.]+$/, '') : `Captured page ${prev.length + index + 1}`,
-          entity: entities?.[0]?._id ?? '',
+          entity: '',
           confidence: 0,
           fields: [],
         };
@@ -112,7 +178,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     void classifyCapturePreview(allFiles, startIndex, files.length);
 
     // Reset input so same file can be selected again
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (e.currentTarget) e.currentTarget.value = '';
   }
 
   async function classifyCapturePreview(allFiles: File[], startIndex: number, count: number) {
@@ -124,7 +190,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     try {
       const imagePages = await Promise.all(
         allFiles
-          .filter(file => file.type.startsWith('image/'))
+          .filter(isImageFile)
           .slice(0, 3)
           .map(async file => ({
             name: file.name,
@@ -186,23 +252,25 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     setError(null);
 
     try {
-      const hintedEntityId = pages[0]?.entity
-        ? pages[0].entity as Id<'entities'>
+      const hintedEntity = pages.find(page => page.entity);
+      const hintedEntityId = hintedEntity?.entity
+        ? hintedEntity.entity as Id<'entities'>
         : undefined;
       const sessionId = await createCaptureSession({
         workspaceId: workspace._id,
-        source: 'camera',
+        source: sessionSource,
         pageCount: capturedFiles.length,
         entityId: hintedEntityId,
       });
 
       for (let i = 0; i < capturedFiles.length; i++) {
         const file = capturedFiles[i];
+        const contentType = contentTypeFor(file, sessionSource);
         const uploadUrl = await generateUploadUrl();
 
         const uploadRes = await fetch(uploadUrl, {
           method: 'POST',
-          headers: { 'Content-Type': file.type || 'image/jpeg' },
+          headers: { 'Content-Type': contentType },
           body: file,
         });
 
@@ -214,7 +282,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           captureSessionId: sessionId,
           storageId,
           fileName: file.name || `capture-${i + 1}.jpg`,
-          contentType: file.type || 'image/jpeg',
+          contentType,
           byteSize: file.size,
           pageNumber: i + 1,
         });
@@ -248,7 +316,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
 
   function removePage(index: number) {
     const target = pages[index];
-    if (target) {
+    if (target?.previewUrl) {
       URL.revokeObjectURL(target.previewUrl);
       objectUrlsRef.current.delete(target.previewUrl);
     }
@@ -262,17 +330,27 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   const active = pages[activeIdx];
   const activeEntity = active && (entities ?? []).find(e => e._id === active.entity);
 
-  // Hidden file input for camera/gallery
+  // Hidden inputs: camera goes straight to native capture; upload opens the regular file picker.
   const hiddenInput = (
-    <input
-      ref={fileInputRef}
-      type="file"
-      accept="image/*"
-      capture="environment"
-      multiple
-      onChange={handleCapture}
-      style={{ display: 'none' }}
-    />
+    <>
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        onChange={event => handleFiles(event, 'camera')}
+        style={{ display: 'none' }}
+      />
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept={ACCEPTED_DOCUMENTS}
+        multiple
+        onChange={event => handleFiles(event, 'upload')}
+        style={{ display: 'none' }}
+      />
+    </>
   );
 
   // AIM stage
@@ -304,27 +382,38 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
             {busy ? <Spinner /> : Ic.camera(32, '#fff')}
           </div>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)', letterSpacing: -0.3 }}>
-            {busy ? 'Adding page...' : 'Opening camera...'}
+            {busy ? 'Adding page...' : 'Add document'}
           </div>
           <div style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.45, marginTop: 8, maxWidth: 280 }}>
             {pages.length > 0
               ? `${pages.length} page${pages.length > 1 ? 's' : ''} captured. Add another page or review before sending.`
-              : 'Use your phone camera to capture the document. You can add more pages before sending.'}
+              : 'Use the camera or choose an existing file. Add all pages first, then send once.'}
           </div>
           {!busy && (
-            <button onClick={trigger} style={{
-              marginTop: 22, border: 0, borderRadius: 12,
-              background: 'var(--ink)', color: '#fff', cursor: 'pointer',
-              padding: '12px 18px', fontSize: 15, fontWeight: 700,
-              fontFamily: 'var(--font)',
-            }}>Open camera</button>
+            <div style={{ marginTop: 22, display: 'flex', gap: 8 }}>
+              <button onClick={triggerCamera} style={{
+                border: 0, borderRadius: 12,
+                background: 'var(--ink)', color: '#fff', cursor: 'pointer',
+                padding: '12px 15px', fontSize: 15, fontWeight: 700,
+                fontFamily: 'var(--font)',
+              }}>Open camera</button>
+              <button onClick={triggerUpload} style={{
+                border: '0.5px solid var(--sep)', borderRadius: 12,
+                background: '#fff', color: 'var(--ink)', cursor: 'pointer',
+                padding: '12px 15px', fontSize: 15, fontWeight: 700,
+                fontFamily: 'var(--font)',
+              }}>Upload file</button>
+            </div>
           )}
         </div>
 
         {pages.length > 0 && (
           <div style={{ padding: '12px 16px 30px', display: 'flex', gap: 8 }}>
-            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={trigger}>
-              Add page
+            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={triggerCamera}>
+              Add photo
+            </Btn>
+            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={triggerUpload}>
+              Add file
             </Btn>
             <Btn size="lg" variant="dark" style={{ flex: 1.2 }} onClick={() => setStage('review')}>
               Review
@@ -367,10 +456,10 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
             {pages.length > 1 ? `Page ${activeIdx + 1} of ${pages.length}` : 'Review'}
           </div>
-          <button onClick={trigger} style={{
+          <button onClick={triggerUpload} style={{
             background: 'transparent', border: 0, padding: 6, cursor: 'pointer', color: 'var(--accent)',
             fontSize: 15, fontWeight: 500, fontFamily: 'var(--font)',
-          }}>+ Add</button>
+          }}>+ File</button>
         </div>
 
         <div style={{ padding: '0 16px' }}>
@@ -390,7 +479,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
         {pages.length > 1 && (
           <div className="no-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 16px 0' }}>
             {pages.map((page, index) => (
-              <button key={page.previewUrl} onClick={() => setActiveIdx(index)} style={{
+              <button key={page.previewUrl ?? `${page.fileName}-${index}`} onClick={() => setActiveIdx(index)} style={{
                 width: 48, height: 62, borderRadius: 7, padding: 0, overflow: 'hidden',
                 border: index === activeIdx ? '2px solid var(--accent)' : '0.5px solid var(--sep)',
                 background: '#fff', flexShrink: 0, cursor: 'pointer',
@@ -425,7 +514,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           )}
 
           {/* Entity assignment */}
-          {activeEntity && (
+          {(entities?.length ?? 0) > 0 && (
             <div style={{ padding: '12px 16px 0' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>Filed under</div>
               <button onClick={() => setShowEntityPicker(true)} style={{
@@ -434,12 +523,12 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
                 border: '1px solid var(--hair)', background: '#fff', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font)',
               }}>
-                <span style={{ width: 10, height: 10, borderRadius: 99, background: activeEntity.color }}/>
+                <span style={{ width: 10, height: 10, borderRadius: 99, background: activeEntity?.color ?? 'var(--sep)' }}/>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, color: 'var(--ink)', fontWeight: 500 }}>{activeEntity.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{activeEntity.subtitle}</div>
+                  <div style={{ fontSize: 15, color: 'var(--ink)', fontWeight: 500 }}>{activeEntity?.name ?? 'Not assigned'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{activeEntity?.subtitle ?? 'Julia will only infer from known entities'}</div>
                 </div>
-                <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 500 }}>Wrong?</span>
+                <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 500 }}>{activeEntity ? 'Wrong?' : 'Choose'}</span>
               </button>
             </div>
           )}
@@ -494,10 +583,13 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           background: 'linear-gradient(0deg, rgba(242,242,247,1) 60%, rgba(242,242,247,0))',
         }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Btn size="lg" variant="secondary" style={{ flex: 1 }} onClick={trigger}>
-              Add page
+            <Btn size="lg" variant="secondary" style={{ flex: 0.9 }} onClick={triggerCamera}>
+              Photo
             </Btn>
-            <Btn size="lg" variant="dark" style={{ flex: 1.4 }}
+            <Btn size="lg" variant="secondary" style={{ flex: 0.9 }} onClick={triggerUpload}>
+              File
+            </Btn>
+            <Btn size="lg" variant="dark" style={{ flex: 1.2 }}
               icon={Ic.check(18, '#fff', 2.5)}
               onClick={handleFile}>
               Send {pages.length}
@@ -528,6 +620,21 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
                   border: 0, fontSize: 16, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>Done</button>
               </div>
               <div style={{ background: '#fff', marginInline: 16, borderRadius: 12, overflow: 'hidden' }}>
+                <div onClick={() => {
+                  setPages(p => p.map((pg, idx) => idx === activeIdx ? { ...pg, entity: '' } : pg));
+                  setShowEntityPicker(false);
+                }} style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                  borderBottom: (entities?.length ?? 0) > 0 ? '0.5px solid var(--hair)' : 'none',
+                  cursor: 'pointer',
+                }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 99, background: 'var(--sep)' }}/>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, color: 'var(--ink)', fontWeight: 500 }}>Let Julia infer</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>Only from entities already in this workspace</div>
+                  </div>
+                  {!active.entity && Ic.check(18, 'var(--accent)', 2.5)}
+                </div>
                 {(entities ?? []).map((ent, i) => {
                   const sel = ent._id === active.entity;
                   return (

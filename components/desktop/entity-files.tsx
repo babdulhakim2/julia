@@ -2,6 +2,9 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import type { Entity, Item, Folder } from '@/lib/types';
 import { CATEGORIES } from '@/lib/data';
 import { useStore } from '@/lib/store';
@@ -16,6 +19,7 @@ import { Toast } from '@/components/ui/toast';
 import { STATUS_META } from '@/lib/data';
 import { DocumentThumb } from '@/components/shared/document-thumb';
 import { BookkeepingPanel } from '@/components/shared/bookkeeping-panel';
+import { useActiveWorkspace } from '@/lib/admin-view';
 
 interface EntityFilesProps {
   entity: Entity;
@@ -38,8 +42,13 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function DraggableItemRow({ item, selected, onSelect }: {
-  item: Item; selected: boolean; onSelect: (id: string) => void;
+function DraggableItemRow({ item, selected, onSelect, onReassess, reassessing, readOnly }: {
+  item: Item;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  onReassess: (item: Item) => void;
+  reassessing: boolean;
+  readOnly: boolean;
 }) {
   const { startDrag, updatePosition, endDrag, state } = useDragDrop();
   const meta = STATUS_META[item.status];
@@ -98,11 +107,19 @@ function DraggableItemRow({ item, selected, onSelect }: {
   };
 
   return (
-    <button
+    <div
       onMouseDown={handleMouseDown}
       onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleClick();
+        }
+      }}
       style={{
-        display: 'grid', gridTemplateColumns: '32px 1fr 110px 110px',
+        display: 'grid', gridTemplateColumns: '32px 1fr 110px 110px 44px',
         width: '100%', padding: '11px 24px', alignItems: 'center', gap: 0,
         background: selected ? 'var(--sel-bg)' : 'transparent', border: 0, borderBottom: '0.5px solid var(--hair)',
         fontFamily: 'var(--font)', textAlign: 'left',
@@ -133,12 +150,34 @@ function DraggableItemRow({ item, selected, onSelect }: {
       <div style={{ textAlign: 'right', fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
         {item.amount ? `£${item.amount.toLocaleString()}` : '—'}
       </div>
-    </button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="button"
+          title={readOnly ? 'Preview mode' : 'Reassess document'}
+          disabled={readOnly || reassessing || !item.convexDocumentId}
+          onClick={(event) => {
+            event.stopPropagation();
+            onReassess(item);
+          }}
+          style={{
+            width: 28, height: 28, borderRadius: 7,
+            border: '0.5px solid var(--sep)', background: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: readOnly || reassessing || !item.convexDocumentId ? 'default' : 'pointer',
+            opacity: readOnly || !item.convexDocumentId ? 0.4 : 1,
+          }}
+        >
+          {reassessing ? Ic.clock(14, 'var(--muted)') : Ic.sparkle(14, 'var(--accent)')}
+        </button>
+      </div>
+    </div>
   );
 }
 
 export function EntityFiles({ entity, items, search, selectedId, onSelect, activeFolderId }: EntityFilesProps) {
   const { state, dispatch } = useStore();
+  const { workspace, isViewingClient } = useActiveWorkspace();
+  const createProcessingJob = useMutation(api.processingJobs.create);
   const router = useRouter();
   const [tab, setTab] = useState('all');
   const [period, setPeriod] = useState('all');
@@ -148,6 +187,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
   const [newFolderName, setNewFolderName] = useState('');
   const [showAutoOrganize, setShowAutoOrganize] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant?: 'default' | 'success' } | null>(null);
+  const [reassessingIds, setReassessingIds] = useState<Set<string>>(() => new Set());
 
   const folders = state.folders.filter(f => f.entityId === entity.id);
 
@@ -209,6 +249,30 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
     setShowAutoOrganize(true);
   }
 
+  async function handleReassess(item: Item) {
+    if (!workspace || !item.convexDocumentId || reassessingIds.has(item.id) || isViewingClient) return;
+    setReassessingIds(prev => new Set(prev).add(item.id));
+    try {
+      await createProcessingJob({
+        workspaceId: workspace._id,
+        kind: 'extract',
+        documentId: item.convexDocumentId as Id<'documents'>,
+        provider: 'openrouter',
+        model: 'google/gemini-2.5-flash',
+      });
+      showToast('Reassessment started. Julia will update any new deadlines or bookkeeping.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not start reassessment';
+      showToast(message);
+    } finally {
+      setReassessingIds(prev => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
   // Compute auto-organize result for modal
   const autoOrganizeResult = showAutoOrganize
     ? computeAutoOrganize(items, folders, entity.id)
@@ -251,7 +315,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
           </div>
         )}
 
-        {!activeFolderId && entity.type === 'business' && (
+        {!activeFolderId && (
           <BookkeepingPanel entityId={entity.id} entityName={entity.name} />
         )}
 
@@ -395,7 +459,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
             </div>
             <div>
               <div style={{
-                display: 'grid', gridTemplateColumns: '32px 1fr 110px 110px',
+                display: 'grid', gridTemplateColumns: '32px 1fr 110px 110px 44px',
                 padding: '8px 24px', borderBottom: '0.5px solid var(--sep)',
                 fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
                 background: '#fff', position: 'sticky', top: 0, zIndex: 1,
@@ -404,9 +468,18 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
                 <span>Title</span>
                 <span>Status</span>
                 <span style={{ textAlign: 'right' }}>Amount</span>
+                <span></span>
               </div>
               {displayItems.map(it => (
-                <DraggableItemRow key={it.id} item={it} selected={selectedId === it.id} onSelect={onSelect} />
+                <DraggableItemRow
+                  key={it.id}
+                  item={it}
+                  selected={selectedId === it.id}
+                  onSelect={onSelect}
+                  onReassess={handleReassess}
+                  reassessing={reassessingIds.has(it.id)}
+                  readOnly={isViewingClient}
+                />
               ))}
             </div>
           </>
@@ -420,7 +493,7 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
                 </div>
                 <div>
                   <div style={{
-                    display: 'grid', gridTemplateColumns: '32px 1fr 110px 110px',
+                    display: 'grid', gridTemplateColumns: '32px 1fr 110px 110px 44px',
                     padding: '8px 24px', borderBottom: '0.5px solid var(--sep)',
                     fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
                     background: '#fff', position: 'sticky', top: 0, zIndex: 1,
@@ -429,9 +502,18 @@ export function EntityFiles({ entity, items, search, selectedId, onSelect, activ
                     <span>Title</span>
                     <span>Status</span>
                     <span style={{ textAlign: 'right' }}>Amount</span>
+                    <span></span>
                   </div>
                   {(folders.length > 0 ? unfiledItems : tabItems).map(it => (
-                    <DraggableItemRow key={it.id} item={it} selected={selectedId === it.id} onSelect={onSelect} />
+                    <DraggableItemRow
+                      key={it.id}
+                      item={it}
+                      selected={selectedId === it.id}
+                      onSelect={onSelect}
+                      onReassess={handleReassess}
+                      reassessing={reassessingIds.has(it.id)}
+                      readOnly={isViewingClient}
+                    />
                   ))}
                 </div>
               </>

@@ -34,6 +34,7 @@ interface ExtractionResult {
   issuer?: string;
   reference?: string;
   entityId?: string;
+  entityConfidence: number;
   confidence: number;
   needsReview: boolean;
   needsReviewReason?: string;
@@ -142,6 +143,7 @@ function buildExtractionPrompt(context: {
       "You are the document intake engine for an AI-native company secretary SaaS.",
       "Extract structured facts from uploaded letters, PDFs, and scanned photos.",
       "Match the document to one known entity only when there is enough evidence.",
+      "Use only supplied entity IDs. Never invent an entity ID or a new entity name.",
       "Prefer needsReview=true over guessing when entity, amount, due date, or action is uncertain.",
       "Return strict JSON matching the supplied schema. Do not include markdown.",
     ].join("\n"),
@@ -158,7 +160,7 @@ function buildExtractionPrompt(context: {
         : "Plain text extracted before model call: none",
       "Task:",
       "1. Read all uploaded pages as one capture session.",
-      "2. Identify the best entityId from the known entities, or null when uncertain.",
+      "2. Identify the best entityId from the known entities, or null when uncertain. entityConfidence must be below 0.75 unless there is direct identifier, name, address, registration, or account evidence.",
       "3. Classify category and documentType.",
       "4. Extract issuer, reference, amount, currency, issuedDate, dueDate, summary, tags, and useful fields.",
       "5. Set needsReview when confidence is below 0.8 or when a human should confirm entity, amount, due date, or next action.",
@@ -188,6 +190,8 @@ export const processJob = internalAction({
       let outputSummary = "Processed job";
       if (job.kind === "document_ingest") {
         outputSummary = await handleDocumentIngest(ctx, job);
+      } else if (job.kind === "extract") {
+        outputSummary = await handleDocumentReassess(ctx, job);
       } else if (job.kind === "embed") {
         outputSummary = await handleEmbed(ctx, job);
       }
@@ -256,30 +260,7 @@ async function handleDocumentIngest(
   if (!wsContext) throw new Error("Workspace not found");
   if (!session) throw new Error("Capture session not found");
 
-  const inlineText: string[] = [];
-  const fileParts: UserContentPart[] = [];
-  for (const file of files) {
-    const url = await ctx.storage.getUrl(file.storageId);
-    if (!url) continue;
-
-    if (file.contentType.startsWith("image/")) {
-      fileParts.push({ type: "image_url", image_url: { url } });
-      continue;
-    }
-
-    if (file.contentType.startsWith("text/") || file.contentType === "application/json") {
-      inlineText.push(await readTextFile(url, file.fileName));
-      continue;
-    }
-
-    fileParts.push({
-      type: "file",
-      file: {
-        filename: file.fileName,
-        file_data: url,
-      },
-    });
-  }
+  const { inlineText, fileParts } = await collectFileInputs(ctx, files);
 
   const prompt = buildExtractionPrompt({
     workspaceName: wsContext.workspace.name,
@@ -289,53 +270,15 @@ async function handleDocumentIngest(
     inlineText,
   });
 
-  const userContent: UserContentPart[] = [
-    { type: "text", text: prompt.user },
-    ...fileParts,
-  ];
-
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
-
   const model = job.model || GEMINI_FLASH_MODEL;
-  const res = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
-    method: "POST",
-    headers: openRouterHeaders(apiKey),
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: prompt.system },
-        { role: "user", content: userContent },
-      ],
-      plugins: [
-        {
-          id: "file-parser",
-          pdf: { engine: process.env.OPENROUTER_PDF_ENGINE ?? "mistral-ocr" },
-        },
-        { id: "response-healing" },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "document_extraction",
-          strict: true,
-          schema: DOCUMENT_EXTRACTION_OUTPUT_SCHEMA,
-        },
-      },
-      temperature: 0.1,
-      max_completion_tokens: 2000,
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(`OpenRouter error ${res.status}: ${openRouterError(data)}`);
-  }
-
-  const extraction = normalizeExtraction(readMessageText(data));
+  const { extraction, data } = await runExtractionModel(prompt, fileParts, model);
   const validEntityIds = new Set<string>(wsContext.entities.map((entity) => entity.id));
   let entityId: Id<"entities"> | undefined;
-  if (extraction.entityId && validEntityIds.has(extraction.entityId)) {
+  if (
+    extraction.entityId &&
+    validEntityIds.has(extraction.entityId) &&
+    extraction.entityConfidence >= 0.75
+  ) {
     entityId = extraction.entityId as Id<"entities">;
   } else if (session.entityId && validEntityIds.has(session.entityId)) {
     entityId = session.entityId;
@@ -423,6 +366,129 @@ async function handleDocumentIngest(
   return `Created document: ${extraction.title}`;
 }
 
+async function handleDocumentReassess(
+  ctx: ActionCtx,
+  job: Doc<"processingJobs">,
+): Promise<string> {
+  if (!job.documentId) {
+    throw new Error("extract job requires documentId");
+  }
+
+  const [doc, files, wsContext] = await Promise.all([
+    ctx.runQuery(internal.processingQueries.getDocument, {
+      documentId: job.documentId,
+    }),
+    ctx.runQuery(internal.processingQueries.getDocumentFiles, {
+      documentId: job.documentId,
+    }),
+    ctx.runQuery(internal.processingQueries.getWorkspaceContext, {
+      workspaceId: job.workspaceId,
+    }),
+  ]);
+
+  if (!doc) throw new Error("Document not found");
+  if (!wsContext) throw new Error("Workspace not found");
+
+  const fileInputs = await collectFileInputs(ctx, files);
+  const prompt = buildExtractionPrompt({
+    workspaceName: wsContext.workspace.name,
+    entities: wsContext.entities,
+    fileNames: files.map((file) => file.fileName),
+    hintedEntityId: doc.entityId,
+    inlineText: [
+      `Existing stored facts before reassessment:\n${buildDocumentText(doc)}`,
+      ...fileInputs.inlineText,
+    ],
+  });
+
+  const model = job.model || GEMINI_FLASH_MODEL;
+  const { extraction, data } = await runExtractionModel(prompt, fileInputs.fileParts, model);
+  const validEntityIds = new Set<string>(wsContext.entities.map((entity) => entity.id));
+  let entityId: Id<"entities"> | undefined;
+  if (
+    extraction.entityId &&
+    validEntityIds.has(extraction.entityId) &&
+    extraction.entityConfidence >= 0.75
+  ) {
+    entityId = extraction.entityId as Id<"entities">;
+  } else if (doc.entityId && validEntityIds.has(doc.entityId)) {
+    entityId = doc.entityId;
+  }
+
+  const needsReview = extraction.needsReview || extraction.confidence < 0.8 || !entityId;
+  const update = await ctx.runMutation(
+    internal.documentMutations.updateFromExtraction,
+    {
+      documentId: doc._id,
+      title: extraction.title,
+      category: extraction.category,
+      documentType: extraction.documentType,
+      issuer: extraction.issuer,
+      reference: extraction.reference,
+      summary: extraction.summary,
+      entityId,
+      confidence: extraction.confidence,
+      needsReview,
+      needsReviewReason: extraction.needsReviewReason,
+      amountMinor: extraction.amountMinor,
+      currency: extraction.currency,
+      issuedDate: extraction.issuedDate,
+      dueDate: extraction.dueDate,
+      extractedFields: extraction.extractedFields,
+      tags: extraction.tags,
+    },
+  );
+
+  if (
+    extraction.bookkeepingCandidate &&
+    entityId &&
+    extraction.amountMinor !== undefined &&
+    extraction.bookkeepingType
+  ) {
+    await ctx.runMutation(internal.bookkeeping.createFromDocument, {
+      workspaceId: job.workspaceId,
+      entityId,
+      documentId: doc._id,
+      createdBy: doc.createdBy,
+      type: extraction.bookkeepingType,
+      paymentMethod: extraction.paymentMethod ?? "other",
+      recordDate: timestampFromIsoDate(
+        extraction.recordDate ?? extraction.issuedDate ?? extraction.dueDate,
+      ) ?? Date.now(),
+      amount: {
+        amountMinor: Math.abs(Math.round(extraction.amountMinor)),
+        currency: extraction.currency ?? doc.amount?.currency ?? "GBP",
+      },
+      description: extraction.title,
+      category: extraction.bookkeepingCategory ?? extraction.documentType,
+      notes: extraction.summary,
+    });
+  }
+
+  await recordOpenRouterUsage(ctx, {
+    workspaceId: job.workspaceId,
+    userId: doc.createdBy,
+    entityId,
+    documentId: doc._id,
+    feature: "openrouter_extract",
+    model,
+    data,
+  });
+
+  await ctx.runMutation(internal.processingJobs.createInternal, {
+    workspaceId: job.workspaceId,
+    kind: "embed",
+    documentId: doc._id,
+    provider: job.provider,
+    model: DOCUMENT_EMBEDDING_MODEL,
+  });
+
+  const changed = update.changedFields.length
+    ? `updated ${update.changedFields.join(", ")}`
+    : "no field changes";
+  return `Reassessed document: ${changed}`;
+}
+
 async function handleEmbed(
   ctx: ActionCtx,
   job: Doc<"processingJobs">,
@@ -444,6 +510,9 @@ async function handleEmbed(
   if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
 
   const embeddingModel = job.model || DOCUMENT_EMBEDDING_MODEL;
+  await ctx.runMutation(internal.documentMutations.clearTextChunksForDocument, {
+    documentId: doc._id,
+  });
   for (let i = 0; i < chunks.length; i++) {
     const res = await fetch(`${OPENROUTER_API_URL}/embeddings`, {
       method: "POST",
@@ -490,6 +559,89 @@ async function handleEmbed(
   return `Embedded ${chunks.length} chunk${chunks.length === 1 ? "" : "s"}`;
 }
 
+async function collectFileInputs(
+  ctx: ActionCtx,
+  files: Array<Doc<"documentFiles">>,
+) {
+  const inlineText: string[] = [];
+  const fileParts: UserContentPart[] = [];
+  for (const file of files) {
+    const url = await ctx.storage.getUrl(file.storageId);
+    if (!url) continue;
+
+    if (file.contentType.startsWith("image/")) {
+      fileParts.push({ type: "image_url", image_url: { url } });
+      continue;
+    }
+
+    if (file.contentType.startsWith("text/") || file.contentType === "application/json") {
+      inlineText.push(await readTextFile(url, file.fileName));
+      continue;
+    }
+
+    fileParts.push({
+      type: "file",
+      file: {
+        filename: file.fileName,
+        file_data: url,
+      },
+    });
+  }
+  return { inlineText, fileParts };
+}
+
+async function runExtractionModel(
+  prompt: { system: string; user: string },
+  fileParts: UserContentPart[],
+  model: string,
+) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
+
+  const userContent: UserContentPart[] = [
+    { type: "text", text: prompt.user },
+    ...fileParts,
+  ];
+  const res = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
+    method: "POST",
+    headers: openRouterHeaders(apiKey),
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: prompt.system },
+        { role: "user", content: userContent },
+      ],
+      plugins: [
+        {
+          id: "file-parser",
+          pdf: { engine: process.env.OPENROUTER_PDF_ENGINE ?? "mistral-ocr" },
+        },
+        { id: "response-healing" },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "document_extraction",
+          strict: true,
+          schema: DOCUMENT_EXTRACTION_OUTPUT_SCHEMA,
+        },
+      },
+      temperature: 0.1,
+      max_completion_tokens: 2000,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`OpenRouter error ${res.status}: ${openRouterError(data)}`);
+  }
+
+  return {
+    extraction: normalizeExtraction(readMessageText(data)),
+    data,
+  };
+}
+
 function openRouterHeaders(apiKey: string) {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -534,6 +686,7 @@ function normalizeExtraction(content: string): ExtractionResult {
     issuer: optionalString(record.issuer),
     reference: optionalString(record.reference),
     entityId: optionalString(record.entityId),
+    entityConfidence: clampNumber(record.entityConfidence, 0, 1, 0),
     confidence,
     needsReview: booleanValue(record.needsReview, true),
     needsReviewReason: optionalString(record.needsReviewReason),

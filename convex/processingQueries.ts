@@ -27,6 +27,21 @@ export const getSessionFiles = internalQuery({
 });
 
 /**
+ * Gets all files for an existing document, ordered by page number.
+ */
+export const getDocumentFiles = internalQuery({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("documentFiles")
+      .withIndex("by_documentId_and_pageNumber", (q) =>
+        q.eq("documentId", args.documentId),
+      )
+      .take(50);
+  },
+});
+
+/**
  * Gets workspace context for AI prompts (workspace name + entity list).
  */
 export const getWorkspaceContext = internalQuery({

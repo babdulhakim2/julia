@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { useStore } from '@/lib/store';
 import { inPeriod, inDateRange } from '@/lib/utils';
 import { CATEGORIES } from '@/lib/data';
@@ -18,6 +21,7 @@ import { Toast } from '@/components/ui/toast';
 import { DocumentPreviewModal } from '@/components/shared/document-preview-modal';
 import { DocumentThumb } from '@/components/shared/document-thumb';
 import { BookkeepingPanel } from '@/components/shared/bookkeeping-panel';
+import { useActiveWorkspace } from '@/lib/admin-view';
 import type { Folder, Item } from '@/lib/types';
 
 interface FileManagerProps {
@@ -28,6 +32,8 @@ interface FileManagerProps {
 
 export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) {
   const { state, dispatch } = useStore();
+  const { workspace, isViewingClient } = useActiveWorkspace();
+  const createProcessingJob = useMutation(api.processingJobs.create);
   const e = state.entities.find(x => x.id === entityId);
   const all = state.items.filter(i => i.entity === entityId);
   const folders = state.folders.filter(f => f.entityId === entityId);
@@ -45,6 +51,7 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
   const [showAutoOrganize, setShowAutoOrganize] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant?: 'default' | 'success' } | null>(null);
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
+  const [reassessingIds, setReassessingIds] = useState<Set<string>>(() => new Set());
 
   if (!e) return null;
 
@@ -118,6 +125,30 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
     setShowAutoOrganize(true);
   }
 
+  async function handleReassess(item: Item) {
+    if (!workspace || !item.convexDocumentId || reassessingIds.has(item.id) || isViewingClient) return;
+    setReassessingIds(prev => new Set(prev).add(item.id));
+    try {
+      await createProcessingJob({
+        workspaceId: workspace._id,
+        kind: 'extract',
+        documentId: item.convexDocumentId as Id<'documents'>,
+        provider: 'openrouter',
+        model: 'google/gemini-2.5-flash',
+      });
+      showToast('Reassessment started', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not start reassessment';
+      showToast(message);
+    } finally {
+      setReassessingIds(prev => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
   const autoOrganizeResult = showAutoOrganize
     ? computeAutoOrganize(all, folders, entityId)
     : null;
@@ -183,7 +214,7 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
           </div>
         )}
 
-        {!activeFolder && e.type === 'business' && (
+        {!activeFolder && (
           <BookkeepingPanel entityId={e.id} entityName={e.name} compact />
         )}
 
@@ -302,6 +333,9 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
               items={displayItems}
               onOpenItem={handleOpenItem}
               onMoveItem={(id) => setMoveItemId(id)}
+              onReassess={handleReassess}
+              reassessingIds={reassessingIds}
+              readOnly={isViewingClient}
             />
           ) : (
             <>
@@ -315,6 +349,9 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
                 items={folders.length > 0 ? unfiledItems : catFiltered}
                 hasFolders={folders.length > 0}
                 onMoveItem={(id) => setMoveItemId(id)}
+                onReassess={handleReassess}
+                reassessingIds={reassessingIds}
+                readOnly={isViewingClient}
               />
             </>
           )
@@ -323,6 +360,9 @@ export function FileManager({ entityId, onBack, onOpenItem }: FileManagerProps) 
             items={activeFolderId ? displayItems : catFiltered}
             onOpenItem={handleOpenItem}
             onMoveItem={(id) => setMoveItemId(id)}
+            onReassess={handleReassess}
+            reassessingIds={reassessingIds}
+            readOnly={isViewingClient}
           />
         )}
 
@@ -446,7 +486,7 @@ function TouchDraggableItem({ item, onOpenItem, children }: {
   );
 }
 
-function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMoveItem }: {
+function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMoveItem, onReassess, reassessingIds, readOnly }: {
   cats: typeof CATEGORIES;
   byCat: Record<string, Item[]>;
   category: string;
@@ -454,6 +494,9 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
   items: Item[];
   hasFolders: boolean;
   onMoveItem: (id: string) => void;
+  onReassess: (item: Item) => void;
+  reassessingIds: Set<string>;
+  readOnly: boolean;
 }) {
   if (hasFolders) {
     if (items.length === 0) {
@@ -478,10 +521,30 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
                 </div>
                 {it.amount && <div style={{ fontSize: 14, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>£{it.amount}</div>}
               </div>
-              <button onClick={() => onMoveItem(it.id)} style={{
+              <button onClick={(event) => {
+                event.stopPropagation();
+                onMoveItem(it.id);
+              }} onTouchStart={(event) => event.stopPropagation()} style={{
                 background: 'transparent', border: 0, cursor: 'pointer', padding: 4, flexShrink: 0,
               }}>
                 {Ic.doc(16, 'var(--accent)')}
+              </button>
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onReassess(it);
+                }}
+                onTouchStart={(event) => event.stopPropagation()}
+                disabled={readOnly || reassessingIds.has(it.id) || !it.convexDocumentId}
+                title={readOnly ? 'Preview mode' : 'Reassess document'}
+                style={{
+                  background: 'transparent', border: 0,
+                  cursor: readOnly || reassessingIds.has(it.id) || !it.convexDocumentId ? 'default' : 'pointer',
+                  padding: 4, flexShrink: 0,
+                  opacity: readOnly || !it.convexDocumentId ? 0.4 : 1,
+                }}
+              >
+                {reassessingIds.has(it.id) ? Ic.clock(16, 'var(--muted)') : Ic.sparkle(16, 'var(--accent)')}
               </button>
             </div>
           </TouchDraggableItem>
@@ -509,13 +572,39 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
             </div>
             <div className="no-scrollbar" style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '4px 16px 4px' }}>
               {list.slice(0, 6).map((it) => (
-                <button key={it.id} onClick={() => onOpenItem(it.id)} style={{
+                <div key={it.id} onClick={() => onOpenItem(it.id)} role="button" tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onOpenItem(it.id);
+                    }
+                  }}
+                  style={{
                   width: 138, flexShrink: 0, background: '#fff', borderRadius: 12, border: 0,
                   cursor: 'pointer', padding: 8, textAlign: 'left', fontFamily: 'var(--font)',
                   display: 'flex', flexDirection: 'column', gap: 6,
                 }}>
                   <div style={{ height: 88, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
                     <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview || 'lambeth'} height={88} title={it.title} />
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onReassess(it);
+                      }}
+                      onTouchStart={(event) => event.stopPropagation()}
+                      disabled={readOnly || reassessingIds.has(it.id) || !it.convexDocumentId}
+                      title={readOnly ? 'Preview mode' : 'Reassess document'}
+                      style={{
+                        position: 'absolute', right: 6, top: 6,
+                        width: 28, height: 28, borderRadius: 14,
+                        border: '0.5px solid var(--sep)', background: 'rgba(255,255,255,0.92)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: readOnly || reassessingIds.has(it.id) || !it.convexDocumentId ? 'default' : 'pointer',
+                        opacity: readOnly || !it.convexDocumentId ? 0.45 : 1,
+                      }}
+                    >
+                      {reassessingIds.has(it.id) ? Ic.clock(15, 'var(--muted)') : Ic.sparkle(15, 'var(--accent)')}
+                    </button>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 500, lineHeight: 1.25,
                     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as React.CSSProperties}>{it.title}</div>
@@ -523,7 +612,7 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
                     <span>{(it.date || '').slice(5, 10).replace('-', '/')}</span>
                     {it.amount && <span style={{ fontVariantNumeric: 'tabular-nums' }}>£{it.amount}</span>}
                   </div>
-                </button>
+                </div>
               ))}
               {list.length > 6 && (
                 <button style={{ width: 84, flexShrink: 0, background: 'transparent',
@@ -545,10 +634,13 @@ function FolderGrid({ cats, byCat, category, onOpenItem, items, hasFolders, onMo
   );
 }
 
-function FlatListWithMove({ items, onOpenItem, onMoveItem }: {
+function FlatListWithMove({ items, onOpenItem, onMoveItem, onReassess, reassessingIds, readOnly }: {
   items: Item[];
   onOpenItem: (id: string) => void;
   onMoveItem: (id: string) => void;
+  onReassess: (item: Item) => void;
+  reassessingIds: Set<string>;
+  readOnly: boolean;
 }) {
   if (items.length === 0) return (
     <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No matching items.</div>
@@ -572,10 +664,30 @@ function FlatListWithMove({ items, onOpenItem, onMoveItem }: {
               </div>
               {it.amount && <div style={{ fontSize: 14, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>£{it.amount}</div>}
             </div>
-            <button onClick={() => onMoveItem(it.id)} style={{
+            <button onClick={(event) => {
+              event.stopPropagation();
+              onMoveItem(it.id);
+            }} onTouchStart={(event) => event.stopPropagation()} style={{
               background: 'transparent', border: 0, cursor: 'pointer', padding: 4, flexShrink: 0,
             }}>
               {Ic.doc(16, 'var(--accent)')}
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                onReassess(it);
+              }}
+              onTouchStart={(event) => event.stopPropagation()}
+              disabled={readOnly || reassessingIds.has(it.id) || !it.convexDocumentId}
+              title={readOnly ? 'Preview mode' : 'Reassess document'}
+              style={{
+                background: 'transparent', border: 0,
+                cursor: readOnly || reassessingIds.has(it.id) || !it.convexDocumentId ? 'default' : 'pointer',
+                padding: 4, flexShrink: 0,
+                opacity: readOnly || !it.convexDocumentId ? 0.4 : 1,
+              }}
+            >
+              {reassessingIds.has(it.id) ? Ic.clock(16, 'var(--muted)') : Ic.sparkle(16, 'var(--accent)')}
             </button>
           </div>
         </TouchDraggableItem>
