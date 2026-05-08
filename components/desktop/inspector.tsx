@@ -175,6 +175,30 @@ export function DesktopInspector({ itemId, readOnly = false }: InspectorProps) {
           }}>{meta.label}</span>
         )}
 
+        {it.outcomeMessage && (
+          <div style={{
+            marginTop: 14, background: 'var(--accent-soft)', color: 'var(--ink)',
+            borderRadius: 10, padding: 12,
+            fontSize: 12.5, lineHeight: 1.45,
+          }}>
+            {it.outcomeMessage}
+          </div>
+        )}
+
+        {it.draftText && (
+          <div style={{
+            marginTop: 10, background: '#fff', border: '0.5px solid var(--sep)',
+            borderRadius: 10, padding: 12,
+          }}>
+            <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+              Draft ready
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+              {it.draftText}
+            </div>
+          </div>
+        )}
+
         <div style={{ marginTop: 18, background: '#fff', borderRadius: 10, border: '0.5px solid var(--sep)', padding: '4px 14px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '9px 0', borderBottom: '0.5px solid var(--hair)', gap: 14 }}>

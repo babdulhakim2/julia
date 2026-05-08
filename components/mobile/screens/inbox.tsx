@@ -69,7 +69,7 @@ export function InboxView({ onOpenItem, onOpenEntity, onNavigate }: InboxViewPro
         large
         title="Inbox"
         sub={subline}
-        trailing={
+        leading={
           <button
             onClick={() => router.push('/settings')}
             aria-label="Open profile settings"

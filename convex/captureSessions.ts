@@ -2,6 +2,18 @@ import { internalMutation, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireWorkspaceMember } from "./lib/auth";
 
+const documentCategory = v.union(
+  v.literal("finance"),
+  v.literal("tax"),
+  v.literal("utilities"),
+  v.literal("legal"),
+  v.literal("insurance"),
+  v.literal("fines"),
+  v.literal("people"),
+  v.literal("operations"),
+  v.literal("other"),
+);
+
 /**
  * Creates a new capture session.
  */
@@ -17,6 +29,8 @@ export const create = mutation({
     ),
     pageCount: v.number(),
     entityId: v.optional(v.id("entities")),
+    category: v.optional(documentCategory),
+    intakeCategory: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireWorkspaceMember(ctx, args.workspaceId);
@@ -34,6 +48,8 @@ export const create = mutation({
       status: "uploading",
       createdBy: user._id,
       entityId: args.entityId,
+      category: args.category,
+      intakeCategory: args.intakeCategory,
       pageCount: args.pageCount,
       createdAt: now,
       updatedAt: now,

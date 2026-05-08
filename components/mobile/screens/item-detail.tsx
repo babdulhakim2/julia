@@ -44,7 +44,9 @@ export function ItemDetail({ itemId, onBack }: ItemDetailProps) {
       <div style={{ padding: '0 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <StatusPill status={it.status} size="md" />
-          <span style={{ fontSize: 12, color: 'var(--muted2)' }}>{Math.round((it.confidence || 0) * 100)}% confident · human reviewed</span>
+          <span style={{ fontSize: 12, color: 'var(--muted2)' }}>
+            {Math.round((it.confidence || 0) * 100)}% confident{it.intakeCategory ? ` · ${it.intakeCategory}` : ''}
+          </span>
         </div>
         <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--ink)', letterSpacing: -0.3, lineHeight: 1.2, fontFamily: 'var(--font-display)' }}>{it.title}</div>
         <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{it.type} · {e?.name}</div>
@@ -60,6 +62,17 @@ export function ItemDetail({ itemId, onBack }: ItemDetailProps) {
           <DocumentThumb documentId={it.convexDocumentId} fallbackKind={it.preview || 'lambeth'} height={220} title={it.title} />
         </button>
       </div>
+
+      {it.outcomeMessage && (
+        <div style={{ padding: '16px 16px 0' }}>
+          <div style={{
+            background: 'var(--accent-soft)', borderRadius: 12, padding: 14,
+            fontSize: 14, color: 'var(--ink)', lineHeight: 1.45,
+          }}>
+            {it.outcomeMessage}
+          </div>
+        </div>
+      )}
 
       <ListGroup header="Details">
         {fields.map((f, i) => (
@@ -82,8 +95,8 @@ export function ItemDetail({ itemId, onBack }: ItemDetailProps) {
               {Ic.sparkle(11, 'var(--accent)')} Draft reply ready
             </div>
             <div style={{ fontSize: 14, color: 'var(--ink)', marginTop: 8, lineHeight: 1.45,
-              padding: 12, background: 'rgba(255,255,255,0.6)', borderRadius: 8 }}>
-              &ldquo;Dear Sir/Madam, I write to formally challenge PCN LB23994821 on the grounds that the loading restrictions were not clearly signposted at this location&hellip;&rdquo;
+              padding: 12, background: 'rgba(255,255,255,0.6)', borderRadius: 8, whiteSpace: 'pre-wrap' }}>
+              {it.draftText ?? 'A draft reply is ready for this document.'}
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
               <Btn size="sm" variant="primary">Send</Btn>
@@ -93,11 +106,19 @@ export function ItemDetail({ itemId, onBack }: ItemDetailProps) {
         </div>
       )}
 
-      <ListGroup header="Actions">
-        <Row icon={Ic.pound(16, 'var(--accent)')} iconBg="var(--accent-soft)" title="Pay £65 with Lambeth's link" sub="Opens in browser" chevron onClick={() => {}} />
-        <Row icon={Ic.bell(16, 'var(--accent)')} iconBg="var(--accent-soft)" title="Reminder: 12 May, 9am" sub="2 days before due" chevron onClick={() => {}} />
-        <Row icon={Ic.thumbtack(16, 'var(--accent)')} iconBg="var(--accent-soft)" title="Pin to top" chevron last onClick={() => {}} />
-      </ListGroup>
+      {(it.amount || it.dueDate || it.convexDocumentId) && (
+        <ListGroup header="Actions">
+          {it.amount ? (
+            <Row icon={Ic.pound(16, 'var(--accent)')} iconBg="var(--accent-soft)" title={`Amount captured: £${it.amount.toLocaleString()}`} sub={it.type} onClick={() => {}} />
+          ) : null}
+          {it.dueDate ? (
+            <Row icon={Ic.bell(16, 'var(--accent)')} iconBg="var(--accent-soft)" title={`Reminder tracked for ${new Date(it.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`} sub="Appears on calendar" onClick={() => {}} />
+          ) : null}
+          {it.convexDocumentId ? (
+            <Row icon={Ic.doc(16, 'var(--accent)')} iconBg="var(--accent-soft)" title="Preview original document" chevron last onClick={() => setPreviewOpen(true)} />
+          ) : null}
+        </ListGroup>
+      )}
 
       {previewOpen && it.convexDocumentId && (
         <DocumentPreviewModal

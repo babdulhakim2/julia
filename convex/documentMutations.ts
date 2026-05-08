@@ -44,11 +44,42 @@ function statusForDueDate(
   needsReview: boolean,
   dueAt: number | undefined,
   now: number,
-): "needs_review" | "overdue" | "due_soon" | "scheduled" {
+): "needs_review" | "overdue" | "due_soon" | "scheduled" | "done" {
   if (dueAt !== undefined && dueAt < now) return "overdue";
   if (dueAt !== undefined && dueAt <= now + DUE_SOON_MS) return "due_soon";
   if (needsReview) return "needs_review";
-  return "scheduled";
+  return "done";
+}
+
+function intakeRequiresDeadline(intakeCategory?: string) {
+  if (!intakeCategory) return false;
+  return [
+    "expense.utility",
+    "invoice.receivable",
+    "tax.hmrc",
+    "tax.council",
+    "legal.licence",
+    "legal.compliance",
+    "vehicle.pcn",
+    "vehicle.mot",
+    "vehicle.insurance",
+    "vehicle.tax",
+    "property.tenancy",
+    "property.service",
+    "correspondence.council",
+    "correspondence.insurance",
+  ].includes(intakeCategory);
+}
+
+function statusForExtraction(
+  needsReview: boolean,
+  dueAt: number | undefined,
+  now: number,
+  intakeCategory?: string,
+): "needs_review" | "overdue" | "due_soon" | "scheduled" | "done" {
+  if (dueAt !== undefined) return statusForDueDate(needsReview, dueAt, now);
+  if (needsReview || intakeRequiresDeadline(intakeCategory)) return "needs_review";
+  return "done";
 }
 
 function eventKindFor(category: string, documentType: string): "renewal" | "deadline" {
@@ -57,6 +88,22 @@ function eventKindFor(category: string, documentType: string): "renewal" | "dead
     return "renewal";
   }
   return "deadline";
+}
+
+function reminderLeadDaysFor(
+  category: string,
+  documentType: string,
+  intakeCategory?: string,
+) {
+  const text = `${intakeCategory ?? ""} ${category} ${documentType}`.toLowerCase();
+  if (text.includes("vehicle.mot") || text.includes("vehicle.insurance")) return 14;
+  if (text.includes("legal.licence") || text.includes("legal.compliance")) return 14;
+  if (text.includes("tax.hmrc")) return 7;
+  if (text.includes("tax.council") || text.includes("business rates")) return 5;
+  if (text.includes("expense.utility") || text.includes("utility")) return 5;
+  if (text.includes("property.service") || text.includes("ground rent")) return 5;
+  if (text.includes("vehicle.pcn") || text.includes("parking")) return 2;
+  return 5;
 }
 
 /**
@@ -71,12 +118,18 @@ export const createFromExtraction = internalMutation({
     // Extraction result fields
     title: v.string(),
     category: documentCategory,
+    intakeCategory: v.optional(v.string()),
     documentType: v.string(),
     issuer: v.optional(v.string()),
     reference: v.optional(v.string()),
     summary: v.optional(v.string()),
+    actionSummary: v.optional(v.string()),
+    outcomeMessage: v.optional(v.string()),
+    draftResponse: v.optional(v.string()),
+    draftReason: v.optional(v.string()),
     entityId: v.optional(v.id("entities")),
     confidence: v.optional(v.number()),
+    entityConfidence: v.optional(v.number()),
     needsReview: v.boolean(),
     needsReviewReason: v.optional(v.string()),
     amountMinor: v.optional(v.number()),
@@ -96,7 +149,7 @@ export const createFromExtraction = internalMutation({
 
     const issuedAt = parseIsoDate(args.issuedDate);
     const dueAt = parseIsoDate(args.dueDate);
-    const status = statusForDueDate(args.needsReview, dueAt, now);
+    const status = statusForExtraction(args.needsReview, dueAt, now, args.intakeCategory);
 
     const documentId = await ctx.db.insert("documents", {
       workspaceId: args.workspaceId,
@@ -105,15 +158,21 @@ export const createFromExtraction = internalMutation({
       source: args.source,
       status,
       category: args.category,
+      intakeCategory: args.intakeCategory,
       documentType: args.documentType,
       title: args.title,
       issuer: args.issuer,
       reference: args.reference,
       summary: args.summary,
+      actionSummary: args.actionSummary,
+      outcomeMessage: args.outcomeMessage,
+      draftResponse: args.draftResponse,
+      draftReason: args.draftReason,
       amount,
       issuedAt,
       dueAt,
       confidence: args.confidence,
+      entityConfidence: args.entityConfidence,
       needsReviewReason: args.needsReviewReason,
       extractedFields: args.extractedFields,
       tags: args.tags,
@@ -140,7 +199,10 @@ export const createFromExtraction = internalMutation({
         updatedAt: now,
       });
 
-      const reminderAt = Math.max(now, dueAt - 2 * DAY_MS);
+      const reminderAt = Math.max(
+        now,
+        dueAt - reminderLeadDaysFor(args.category, args.documentType, args.intakeCategory) * DAY_MS,
+      );
       await ctx.db.insert("reminders", {
         workspaceId: args.workspaceId,
         entityId: args.entityId,
@@ -178,8 +240,10 @@ export const createFromExtraction = internalMutation({
       unit: "count",
       metadata: {
         category: args.category,
+        intakeCategory: args.intakeCategory ?? null,
         documentType: args.documentType,
         needsReview: args.needsReview,
+        entityConfidence: args.entityConfidence ?? null,
       },
       occurredAt: now,
       createdAt: now,
@@ -197,12 +261,18 @@ export const updateFromExtraction = internalMutation({
     documentId: v.id("documents"),
     title: v.string(),
     category: documentCategory,
+    intakeCategory: v.optional(v.string()),
     documentType: v.string(),
     issuer: v.optional(v.string()),
     reference: v.optional(v.string()),
     summary: v.optional(v.string()),
+    actionSummary: v.optional(v.string()),
+    outcomeMessage: v.optional(v.string()),
+    draftResponse: v.optional(v.string()),
+    draftReason: v.optional(v.string()),
     entityId: v.optional(v.id("entities")),
     confidence: v.optional(v.number()),
+    entityConfidence: v.optional(v.number()),
     needsReview: v.boolean(),
     needsReviewReason: v.optional(v.string()),
     amountMinor: v.optional(v.number()),
@@ -227,16 +297,21 @@ export const updateFromExtraction = internalMutation({
     const reference = args.reference ?? doc.reference;
     const summary = args.summary ?? doc.summary;
     const entityId = args.entityId ?? doc.entityId;
-    const locked = doc.status === "done" || doc.status === "archived";
-    const status = locked ? doc.status : statusForDueDate(args.needsReview, dueAt, now);
+    const locked = doc.status === "archived";
+    const status = locked ? doc.status : statusForExtraction(args.needsReview, dueAt, now, args.intakeCategory);
 
     const changedFields = changedDocumentFields(doc, {
       title: args.title,
       category: args.category,
+      intakeCategory: args.intakeCategory,
       documentType: args.documentType,
       issuer,
       reference,
       summary,
+      actionSummary: args.actionSummary,
+      outcomeMessage: args.outcomeMessage,
+      draftResponse: args.draftResponse,
+      draftReason: args.draftReason,
       entityId,
       status,
       amount,
@@ -247,15 +322,21 @@ export const updateFromExtraction = internalMutation({
     const patch: Partial<Doc<"documents">> = {
       status,
       category: args.category,
+      intakeCategory: args.intakeCategory,
       documentType: args.documentType,
       title: args.title,
       issuer,
       reference,
       summary,
+      actionSummary: args.actionSummary,
+      outcomeMessage: args.outcomeMessage,
+      draftResponse: args.draftResponse,
+      draftReason: args.draftReason,
       amount,
       issuedAt,
       dueAt,
       confidence: args.confidence,
+      entityConfidence: args.entityConfidence,
       needsReviewReason: args.needsReview ? args.needsReviewReason : undefined,
       extractedFields: args.extractedFields,
       tags: args.tags,
@@ -273,6 +354,7 @@ export const updateFromExtraction = internalMutation({
       title: args.title,
       summary,
       category: args.category,
+      intakeCategory: args.intakeCategory,
       documentType: args.documentType,
       locked,
       now,
@@ -349,10 +431,15 @@ function changedDocumentFields(
   next: {
     title: string;
     category: string;
+    intakeCategory?: string;
     documentType: string;
     issuer?: string;
     reference?: string;
     summary?: string;
+    actionSummary?: string;
+    outcomeMessage?: string;
+    draftResponse?: string;
+    draftReason?: string;
     entityId?: Id<"entities">;
     status: Doc<"documents">["status"];
     amount?: Doc<"documents">["amount"];
@@ -363,10 +450,19 @@ function changedDocumentFields(
   const changed: string[] = [];
   if (doc.title !== next.title) changed.push("title");
   if (doc.category !== next.category) changed.push("category");
+  if ((doc.intakeCategory ?? "") !== (next.intakeCategory ?? "")) {
+    changed.push("intake category");
+  }
   if (doc.documentType !== next.documentType) changed.push("type");
   if ((doc.issuer ?? "") !== (next.issuer ?? "")) changed.push("issuer");
   if ((doc.reference ?? "") !== (next.reference ?? "")) changed.push("reference");
   if ((doc.summary ?? "") !== (next.summary ?? "")) changed.push("summary");
+  if ((doc.outcomeMessage ?? "") !== (next.outcomeMessage ?? "")) {
+    changed.push("outcome");
+  }
+  if ((doc.draftResponse ?? "") !== (next.draftResponse ?? "")) {
+    changed.push("draft");
+  }
   if ((doc.entityId ?? "") !== (next.entityId ?? "")) changed.push("entity");
   if (doc.status !== next.status) changed.push("status");
   if ((doc.issuedAt ?? 0) !== (next.issuedAt ?? 0)) changed.push("issued date");
@@ -386,6 +482,7 @@ async function syncDeadlineArtifacts(
     title: string;
     summary?: string;
     category: string;
+    intakeCategory?: string;
     documentType: string;
     locked: boolean;
     now: number;
@@ -448,7 +545,10 @@ async function syncDeadlineArtifacts(
     });
   }
 
-  const reminderAt = Math.max(args.now, args.dueAt - 2 * DAY_MS);
+  const reminderAt = Math.max(
+    args.now,
+    args.dueAt - reminderLeadDaysFor(args.category, args.documentType, args.intakeCategory) * DAY_MS,
+  );
   const pendingReminder = reminders.find((reminder) => reminder.status === "pending");
   if (pendingReminder) {
     await ctx.db.patch(pendingReminder._id, {

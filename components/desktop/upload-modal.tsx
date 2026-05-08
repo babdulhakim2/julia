@@ -17,10 +17,59 @@ interface FileEntry {
   stage: 'ready' | 'uploading' | 'processing' | 'done' | 'error';
   previewUrl?: string;
   error?: string;
+  title?: string;
+  documentType?: string;
+  category?: DocumentCategory;
+  intakeCategory?: string;
+  issuer?: string;
+  fields?: { k: string; v: string }[];
 }
 
+interface CapturePreviewResponse {
+  ok: boolean;
+  title?: string;
+  documentType?: string;
+  category?: DocumentCategory;
+  intakeCategory?: string;
+  issuer?: string | null;
+  entityId?: string | null;
+  confidence?: number;
+  reason?: string | null;
+  fields?: { k: string; v: string }[];
+}
+
+type DocumentCategory = 'finance' | 'tax' | 'utilities' | 'legal' | 'insurance' | 'fines' | 'people' | 'operations' | 'other';
+
+const INTAKE_OPTIONS = [
+  { value: 'takings.card', label: 'Income / card takings', category: 'finance' },
+  { value: 'takings.cash', label: 'Income / cash takings', category: 'finance' },
+  { value: 'expense.supplier', label: 'Expenditure / supplier receipt', category: 'finance' },
+  { value: 'expense.utility', label: 'Utility bill', category: 'utilities' },
+  { value: 'expense.other', label: 'Other expenditure', category: 'finance' },
+  { value: 'tax.hmrc', label: 'HMRC / tax', category: 'tax' },
+  { value: 'tax.council', label: 'Council tax / rates', category: 'tax' },
+  { value: 'vehicle.pcn', label: 'PCN / fine', category: 'fines' },
+  { value: 'vehicle.mot', label: 'MOT', category: 'operations' },
+  { value: 'vehicle.insurance', label: 'Vehicle insurance', category: 'insurance' },
+  { value: 'legal.licence', label: 'Licence / legal', category: 'legal' },
+  { value: 'property.mortgage', label: 'Mortgage / property', category: 'finance' },
+  { value: 'property.service', label: 'Service charge / ground rent', category: 'finance' },
+  { value: 'correspondence.bank', label: 'Bank letter / statement', category: 'finance' },
+  { value: 'correspondence.insurance', label: 'Insurance letter', category: 'insurance' },
+  { value: 'correspondence.other', label: 'Other admin letter', category: 'operations' },
+  { value: 'unknown', label: 'Needs review', category: 'other' },
+] satisfies Array<{ value: string; label: string; category: DocumentCategory }>;
+
 const ACCEPTED_DOCUMENTS = [
-  'image/*',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
   '.pdf',
   '.txt',
   '.csv',
@@ -33,16 +82,48 @@ const ACCEPTED_DOCUMENTS = [
   'application/json',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls',
+  '.xlsx',
 ].join(',');
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const VALID_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const VALID_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
+const VALID_DOCUMENT_EXTENSIONS = new Set(['pdf', 'txt', 'csv', 'json', 'doc', 'docx', 'xls', 'xlsx']);
 
 function supportedFile(file: File) {
   const extension = file.name.toLowerCase().split('.').pop();
   return (
-    file.type.startsWith('image/') ||
-    ['pdf', 'txt', 'csv', 'json', 'doc', 'docx'].includes(extension ?? '')
+    isImageFile(file) ||
+    VALID_DOCUMENT_EXTENSIONS.has(extension ?? '')
   );
+}
+
+function isImageFile(file: File) {
+  const extension = file.name.toLowerCase().split('.').pop();
+  return VALID_IMAGE_MIMES.has(file.type) || VALID_IMAGE_EXTENSIONS.has(extension ?? '');
+}
+
+function contentTypeFor(file: File) {
+  if (VALID_IMAGE_MIMES.has(file.type) || file.type === 'application/pdf' || file.type.startsWith('text/') || file.type === 'application/json' || file.type === 'application/msword' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.type === 'application/vnd.ms-excel' || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+    return file.type;
+  }
+  const extension = file.name.toLowerCase().split('.').pop();
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'txt') return 'text/plain';
+  if (extension === 'csv') return 'text/csv';
+  if (extension === 'json') return 'application/json';
+  if (extension === 'doc') return 'application/msword';
+  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (extension === 'xls') return 'application/vnd.ms-excel';
+  if (extension === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  return 'application/octet-stream';
 }
 
 export function DesktopUploadModal({ onClose }: UploadModalProps) {
@@ -62,8 +143,12 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
   const [dragOver, setDragOver] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<Id<'captureSessions'> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [mappingStatus, setMappingStatus] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [selectedEntityId, setSelectedEntityId] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<DocumentCategory | ''>('');
+  const [selectedIntakeCategory, setSelectedIntakeCategory] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const activeSession = useQuery(
     api.captureSessions.get,
     activeSessionId ? { sessionId: activeSessionId } : 'skip',
@@ -73,13 +158,15 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
     if (!activeSession) return;
     if (activeSession.status === 'filed' || activeSession.status === 'needs_review') {
       setFiles(prev => prev.map(f => f.stage === 'processing' ? { ...f, stage: 'done' } : f));
+      const id = window.setTimeout(onClose, 900);
+      return () => window.clearTimeout(id);
     }
     if (activeSession.status === 'failed') {
       setFiles(prev => prev.map(f => f.stage === 'processing'
         ? { ...f, stage: 'error', error: activeSession.errorMessage ?? 'Processing failed' }
         : f));
     }
-  }, [activeSession]);
+  }, [activeSession, onClose]);
 
   useEffect(() => {
     const objectUrls = objectUrlsRef.current;
@@ -96,13 +183,15 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
       return;
     }
 
-    const fileArray = Array.from(fileList).filter(file => supportedFile(file) && file.size <= MAX_FILE_BYTES);
+    const selected = Array.from(fileList);
+    const rejectedCount = selected.filter(file => !supportedFile(file) || file.size > MAX_FILE_BYTES).length;
+    const fileArray = selected.filter(file => supportedFile(file) && file.size <= MAX_FILE_BYTES);
     if (fileArray.length === 0) {
-      setError('Use images, PDFs, text files, or Word documents under 25 MB.');
+      setError('Use JPG, PNG, WebP, GIF, PDF, text, CSV, JSON, Word, or Excel files under 25 MB. HEIC is not supported.');
       return;
     }
     const newEntries: FileEntry[] = fileArray.map(f => {
-      const previewUrl = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined;
+      const previewUrl = isImageFile(f) ? URL.createObjectURL(f) : undefined;
       if (previewUrl) objectUrlsRef.current.add(previewUrl);
       return {
         file: f,
@@ -112,7 +201,60 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
       };
     });
     setFiles(prev => [...prev, ...newEntries]);
+    setError(rejectedCount > 0 ? `Skipped ${rejectedCount} unsupported file${rejectedCount === 1 ? '' : 's'}. HEIC is not supported.` : null);
+    void classifyCapturePreview(fileArray);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function classifyCapturePreview(fileArray: File[]) {
+    if (!entities || entities.length === 0) return;
+    setPreviewing(true);
+    setMappingStatus('Julia is checking the likely entity and category...');
+    try {
+      const pages = await Promise.all(
+        fileArray.slice(0, 3).map(fileToPreviewPayload),
+      );
+      const res = await fetch('/api/ai/capture-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pages,
+          entities: entities.map(entity => ({
+            id: entity._id,
+            kind: entity.kind,
+            name: entity.name,
+            subtitle: entity.subtitle,
+            identifiers: entity.identifiers,
+          })),
+        }),
+      });
+      const data = await res.json() as CapturePreviewResponse;
+      if (!res.ok || !data.ok) throw new Error('Preview classification failed');
+      if (data.entityId && entities.some(entity => entity._id === data.entityId)) {
+        setSelectedEntityId(data.entityId);
+      }
+      const nextCategory = data.category ?? categoryForIntake(data.intakeCategory);
+      if (nextCategory) setSelectedCategory(nextCategory);
+      if (data.intakeCategory) setSelectedIntakeCategory(data.intakeCategory);
+      setFiles(prev => prev.map(entry => ({
+        ...entry,
+        title: data.title || entry.title,
+        documentType: data.documentType || entry.documentType,
+        category: nextCategory || entry.category,
+        intakeCategory: data.intakeCategory || entry.intakeCategory,
+        issuer: data.issuer || entry.issuer,
+        fields: data.fields?.length ? data.fields : entry.fields,
+      })));
+      const entity = data.entityId ? entities.find(item => item._id === data.entityId) : null;
+      const categoryLabel = labelForIntake(data.intakeCategory) ?? labelForCategory(nextCategory);
+      setMappingStatus(entity
+        ? `Julia thinks this belongs to ${entity.name}${categoryLabel ? ` · ${categoryLabel}` : ''}${data.confidence !== undefined ? ` · ${Math.round(data.confidence * 100)}%` : ''}`
+        : `Julia picked ${categoryLabel ?? 'a category'}, but needs an entity.`);
+    } catch {
+      setMappingStatus(null);
+    } finally {
+      setPreviewing(false);
+    }
   }
 
   function removeFile(index: number) {
@@ -147,6 +289,8 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
         source: 'upload',
         pageCount: uploadEntries.length,
         entityId: selectedEntityId ? selectedEntityId as Id<'entities'> : undefined,
+        category: selectedCategory || undefined,
+        intakeCategory: selectedIntakeCategory || undefined,
       });
       setActiveSessionId(sessionId);
 
@@ -157,10 +301,11 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
 
         try {
           const uploadUrl = await generateUploadUrl();
+          const contentType = contentTypeFor(file);
 
           const uploadRes = await fetch(uploadUrl, {
             method: 'POST',
-            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            headers: { 'Content-Type': contentType },
             body: file,
           });
 
@@ -175,7 +320,7 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
             captureSessionId: sessionId,
             storageId,
             fileName: file.name,
-            contentType: file.type || 'application/octet-stream',
+            contentType,
             byteSize: file.size,
             pageNumber: i + 1,
           });
@@ -296,6 +441,88 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
             </div>
           )}
 
+          {(previewing || mappingStatus || files.some(file => file.title || file.documentType || file.issuer)) && (
+            <div style={{
+              marginTop: 12, border: '0.5px solid var(--sep)',
+              borderRadius: 10, background: '#fff', overflow: 'hidden',
+            }}>
+              <div style={{
+                padding: '10px 12px', borderBottom: '0.5px solid var(--hair)',
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 12.5, color: 'var(--ink)', fontWeight: 700,
+              }}>
+                {previewing ? <ScanningDots /> : Ic.sparkle(13, 'var(--accent)')} {mappingStatus ?? 'Julia checked the upload'}
+              </div>
+              {previewing && (
+                <div style={{
+                  padding: '12px 12px',
+                  display: 'grid',
+                  gridTemplateColumns: '38px 1fr',
+                  gap: 10,
+                  alignItems: 'center',
+                  borderBottom: '0.5px solid var(--hair)',
+                  background: '#FAF9F5',
+                }}>
+                  <div style={{
+                    width: 38, height: 46, borderRadius: 8,
+                    background: 'linear-gradient(180deg, #fff 0%, #F2F4F8 100%)',
+                    border: '0.5px solid var(--sep)',
+                    position: 'relative', overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      position: 'absolute', left: 0, right: 0, top: 0, height: 3,
+                      background: 'var(--accent)',
+                      animation: 'scan-line 1.15s ease-in-out infinite',
+                    }} />
+                    <style>{`@keyframes scan-line { 0% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(42px); opacity: 1; } 100% { transform: translateY(0); opacity: .35; } }`}</style>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 800 }}>Scanning document</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                      Entity and category controls unlock when Julia finishes checking.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {(entities?.length ?? 0) > 0 && (
+                <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+                  <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>
+                    File under
+                    <select disabled={previewing} value={selectedEntityId} onChange={event => setSelectedEntityId(event.target.value)} style={{
+                      width: '100%', border: '0.5px solid var(--sep)', borderRadius: 8,
+                      background: '#fff', color: 'var(--ink)', padding: '8px 10px',
+                      fontSize: 13, fontFamily: 'var(--font)', outline: 'none', marginTop: 6,
+                      opacity: previewing ? 0.55 : 1,
+                    }}>
+                      <option value="" disabled>Choose an entity</option>
+                      {(entities ?? []).map(entity => (
+                        <option key={entity._id} value={entity._id}>{entity.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                    Category
+                    <select disabled={previewing} value={selectedIntakeCategory} onChange={event => {
+                      const option = INTAKE_OPTIONS.find(item => item.value === event.target.value);
+                      setSelectedIntakeCategory(event.target.value);
+                      setSelectedCategory(option?.category ?? '');
+                    }} style={{
+                      width: '100%', border: '0.5px solid var(--sep)', borderRadius: 8,
+                      background: '#fff', color: 'var(--ink)', padding: '8px 10px',
+                      fontSize: 13, fontFamily: 'var(--font)', outline: 'none', marginTop: 6,
+                      opacity: previewing ? 0.55 : 1,
+                    }}>
+                      <option value="" disabled>Choose category</option>
+                      {INTAKE_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* File progress list */}
           {files.length > 0 && (
             <div style={{ marginTop: 14, borderRadius: 10, border: '0.5px solid var(--sep)', overflow: 'hidden' }}>
@@ -317,8 +544,17 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
                     )}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>Page {i + 1}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {f.title || f.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                      Page {i + 1}{f.documentType ? ` · ${f.documentType}` : ''}{f.intakeCategory ? ` · ${labelForIntake(f.intakeCategory) ?? f.intakeCategory}` : ''}
+                    </div>
+                    {f.issuer && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {f.issuer}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {f.stage === 'ready' ? (
@@ -350,24 +586,6 @@ export function DesktopUploadModal({ onClose }: UploadModalProps) {
             </div>
           )}
 
-          {files.length > 0 && (entities?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
-                File under
-              </div>
-              <select value={selectedEntityId} onChange={event => setSelectedEntityId(event.target.value)} style={{
-                width: '100%', border: '0.5px solid var(--sep)', borderRadius: 8,
-                background: '#fff', color: 'var(--ink)', padding: '9px 10px',
-                fontSize: 13, fontFamily: 'var(--font)', outline: 'none',
-              }}>
-                <option value="">Let Julia infer it</option>
-                {(entities ?? []).map(entity => (
-                  <option key={entity._id} value={entity._id}>{entity.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {files.length > 0 && (
             <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
@@ -395,4 +613,92 @@ function Spinner() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </svg>
   );
+}
+
+function ScanningDots() {
+  return (
+    <span style={{ width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span style={{
+        width: 8,
+        height: 8,
+        borderRadius: 99,
+        background: 'var(--accent)',
+        animation: 'scan-pulse 0.9s ease-in-out infinite',
+      }} />
+      <style>{`@keyframes scan-pulse { 0%, 100% { transform: scale(.65); opacity: .45; } 50% { transform: scale(1.15); opacity: 1; } }`}</style>
+    </span>
+  );
+}
+
+async function fileToPreviewPayload(file: File) {
+  return {
+    name: file.name,
+    contentType: contentTypeFor(file),
+    dataUrl: isImageFile(file)
+      ? await fileToPreviewImageDataUrl(file)
+      : file.size <= 8 * 1024 * 1024
+        ? await readFileAsDataUrl(file)
+        : undefined,
+  };
+}
+
+async function fileToPreviewImageDataUrl(file: File) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = objectUrl;
+    });
+
+    const maxSide = 1200;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return await readFileAsDataUrl(file);
+    ctx.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.72);
+  } catch {
+    return await readFileAsDataUrl(file);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function categoryForIntake(value?: string | null): DocumentCategory | '' {
+  return INTAKE_OPTIONS.find(option => option.value === value)?.category ?? '';
+}
+
+function labelForIntake(value?: string | null) {
+  return INTAKE_OPTIONS.find(option => option.value === value)?.label;
+}
+
+function labelForCategory(value?: DocumentCategory | '') {
+  if (!value) return undefined;
+  const labels: Record<DocumentCategory, string> = {
+    finance: 'Finance',
+    tax: 'Tax',
+    utilities: 'Utilities',
+    legal: 'Legal',
+    insurance: 'Insurance',
+    fines: 'Fines',
+    people: 'People',
+    operations: 'Operations',
+    other: 'Other',
+  };
+  return labels[value];
 }

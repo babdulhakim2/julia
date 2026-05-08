@@ -29,6 +29,9 @@ export interface Item {
   capturedAt?: string;
   preview?: string;
   drafted?: boolean;
+  draftText?: string;
+  outcomeMessage?: string;
+  intakeCategory?: string;
   paidAt?: string;
   tags?: string[];
   folderId?: string;
@@ -93,6 +96,8 @@ export interface CapturedPage {
   issuer: string;
   title: string;
   entity: string;
+  category?: string;
+  intakeCategory?: string;
   confidence: number;
   fields: { k: string; v: string }[];
   action?: string;

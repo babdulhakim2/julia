@@ -25,6 +25,8 @@ interface CapturePreviewResponse {
   ok: boolean;
   title?: string;
   documentType?: string;
+  category?: DocumentCategory;
+  intakeCategory?: string;
   issuer?: string | null;
   entityId?: string | null;
   confidence?: number;
@@ -32,8 +34,38 @@ interface CapturePreviewResponse {
   fields?: { k: string; v: string }[];
 }
 
+type DocumentCategory = 'finance' | 'tax' | 'utilities' | 'legal' | 'insurance' | 'fines' | 'people' | 'operations' | 'other';
+
+const INTAKE_OPTIONS = [
+  { value: 'takings.card', label: 'Income / card takings', category: 'finance' },
+  { value: 'takings.cash', label: 'Income / cash takings', category: 'finance' },
+  { value: 'expense.supplier', label: 'Expenditure / supplier receipt', category: 'finance' },
+  { value: 'expense.utility', label: 'Utility bill', category: 'utilities' },
+  { value: 'expense.other', label: 'Other expenditure', category: 'finance' },
+  { value: 'tax.hmrc', label: 'HMRC / tax', category: 'tax' },
+  { value: 'tax.council', label: 'Council tax / rates', category: 'tax' },
+  { value: 'vehicle.pcn', label: 'PCN / fine', category: 'fines' },
+  { value: 'vehicle.mot', label: 'MOT', category: 'operations' },
+  { value: 'vehicle.insurance', label: 'Vehicle insurance', category: 'insurance' },
+  { value: 'legal.licence', label: 'Licence / legal', category: 'legal' },
+  { value: 'property.mortgage', label: 'Mortgage / property', category: 'finance' },
+  { value: 'property.service', label: 'Service charge / ground rent', category: 'finance' },
+  { value: 'correspondence.bank', label: 'Bank letter / statement', category: 'finance' },
+  { value: 'correspondence.insurance', label: 'Insurance letter', category: 'insurance' },
+  { value: 'correspondence.other', label: 'Other admin letter', category: 'operations' },
+  { value: 'unknown', label: 'Needs review', category: 'other' },
+] satisfies Array<{ value: string; label: string; category: DocumentCategory }>;
+
 const ACCEPTED_DOCUMENTS = [
-  'image/*',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
   '.pdf',
   '.txt',
   '.csv',
@@ -46,25 +78,35 @@ const ACCEPTED_DOCUMENTS = [
   'application/json',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls',
+  '.xlsx',
 ].join(',');
 
+const ACCEPTED_CAMERA_IMAGES = 'image/jpeg,image/png,image/webp';
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const VALID_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const VALID_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
+const VALID_DOCUMENT_EXTENSIONS = new Set(['pdf', 'txt', 'csv', 'json', 'doc', 'docx', 'xls', 'xlsx']);
 
 function supportedFile(file: File) {
   const extension = file.name.toLowerCase().split('.').pop();
   return (
     isImageFile(file) ||
-    ['pdf', 'txt', 'csv', 'json', 'doc', 'docx'].includes(extension ?? '')
+    VALID_DOCUMENT_EXTENSIONS.has(extension ?? '')
   );
 }
 
 function isImageFile(file: File) {
   const extension = file.name.toLowerCase().split('.').pop();
-  return file.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif'].includes(extension ?? '');
+  return VALID_IMAGE_MIMES.has(file.type) || VALID_IMAGE_EXTENSIONS.has(extension ?? '');
 }
 
 function contentTypeFor(file: File, source: 'camera' | 'upload') {
-  if (file.type) return file.type;
+  if (VALID_IMAGE_MIMES.has(file.type) || file.type === 'application/pdf' || file.type.startsWith('text/') || file.type === 'application/json' || file.type === 'application/msword' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.type === 'application/vnd.ms-excel' || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+    return file.type;
+  }
   const extension = file.name.toLowerCase().split('.').pop();
   if (extension === 'pdf') return 'application/pdf';
   if (extension === 'txt') return 'text/plain';
@@ -72,11 +114,11 @@ function contentTypeFor(file: File, source: 'camera' | 'upload') {
   if (extension === 'json') return 'application/json';
   if (extension === 'doc') return 'application/msword';
   if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (extension === 'xls') return 'application/vnd.ms-excel';
+  if (extension === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   if (['png'].includes(extension ?? '')) return 'image/png';
   if (['webp'].includes(extension ?? '')) return 'image/webp';
   if (['gif'].includes(extension ?? '')) return 'image/gif';
-  if (extension === 'heic') return 'image/heic';
-  if (extension === 'heif') return 'image/heif';
   if (['jpg', 'jpeg'].includes(extension ?? '') || source === 'camera') return 'image/jpeg';
   return 'application/octet-stream';
 }
@@ -100,9 +142,9 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   const [showEntityPicker, setShowEntityPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mappingStatus, setMappingStatus] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const initialPickerOpenedRef = useRef(false);
   const objectUrlsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -112,15 +154,6 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
       objectUrls.clear();
     };
   }, []);
-
-  useEffect(() => {
-    if (initialPickerOpenedRef.current || stage !== 'aim' || pages.length > 0) return;
-    initialPickerOpenedRef.current = true;
-    const id = window.setTimeout(() => {
-      cameraInputRef.current?.click();
-    }, 0);
-    return () => window.clearTimeout(id);
-  }, [pages.length, stage]);
 
   function triggerCamera() {
     setSessionSource(current => current === 'upload' ? current : 'camera');
@@ -135,16 +168,17 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>, source: 'camera' | 'upload') {
     const selectedFiles = Array.from(e.target.files ?? []);
     if (selectedFiles.length === 0) return;
+    const rejectedCount = selectedFiles.filter(file => !supportedFile(file) || file.size > MAX_FILE_BYTES).length;
     const files = selectedFiles.filter(file => supportedFile(file) && file.size <= MAX_FILE_BYTES);
     if (files.length === 0) {
-      setError('Use images, PDFs, text files, or Word documents under 25 MB.');
+      setError('Use JPG, PNG, WebP, GIF, PDF, text, CSV, JSON, Word, or Excel files under 25 MB. HEIC is not supported.');
       if (e.currentTarget) e.currentTarget.value = '';
       return;
     }
 
-    setError(null);
+    setError(rejectedCount > 0 ? `Skipped ${rejectedCount} unsupported file${rejectedCount === 1 ? '' : 's'}. HEIC is not supported.` : null);
     if (source === 'upload') setSessionSource('upload');
-    setMappingStatus(files.some(isImageFile) ? 'Checking likely entity...' : null);
+    setMappingStatus('Julia is scanning for entity and category...');
     setStage('extracting');
 
     const allFiles = [...capturedFiles, ...files];
@@ -165,6 +199,8 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           issuer: 'Ready to send',
           title: file.name ? file.name.replace(/\.[^.]+$/, '') : `Captured page ${prev.length + index + 1}`,
           entity: '',
+          category: undefined,
+          intakeCategory: undefined,
           confidence: 0,
           fields: [],
         };
@@ -187,18 +223,14 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
       return;
     }
 
+    setPreviewing(true);
     try {
       const imagePages = await Promise.all(
         allFiles
-          .filter(isImageFile)
           .slice(0, 3)
-          .map(async file => ({
-            name: file.name,
-            dataUrl: await fileToPreviewDataUrl(file),
-          })),
+          .map(fileToPreviewPayload),
       );
-      const pagesForAi = imagePages.filter(page => page.dataUrl);
-      if (pagesForAi.length === 0) {
+      if (imagePages.length === 0) {
         setMappingStatus(null);
         return;
       }
@@ -207,7 +239,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pages: pagesForAi,
+          pages: imagePages,
           entities: entities.map(entity => ({
             id: entity._id,
             kind: entity.kind,
@@ -223,6 +255,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
       const entity = data.entityId
         ? entities.find(item => item._id === data.entityId)
         : null;
+      const nextCategory = data.category ?? categoryForIntake(data.intakeCategory);
       setPages(prev => prev.map((page, index) => {
         const inCurrentDocument = index < startIndex + count || count === allFiles.length;
         if (!inCurrentDocument) return page;
@@ -230,6 +263,8 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           ...page,
           title: data.title || page.title,
           type: data.documentType || page.type,
+          category: nextCategory || page.category,
+          intakeCategory: data.intakeCategory || page.intakeCategory,
           issuer: data.issuer || (entity ? `Likely ${entity.name}` : page.issuer),
           entity: entity?._id ?? page.entity,
           confidence: data.confidence ?? page.confidence,
@@ -237,12 +272,15 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           action: data.reason || page.action,
         };
       }));
+      const categoryLabel = labelForIntake(data.intakeCategory) ?? labelForCategory(nextCategory);
       setMappingStatus(entity
-        ? `Matched to ${entity.name}${data.confidence !== undefined ? ` · ${Math.round(data.confidence * 100)}%` : ''}`
-        : 'No confident entity match yet');
+        ? `Matched to ${entity.name}${categoryLabel ? ` · ${categoryLabel}` : ''}${data.confidence !== undefined ? ` · ${Math.round(data.confidence * 100)}%` : ''}`
+        : `Picked ${categoryLabel ?? 'a category'}, but needs an entity`);
       window.setTimeout(() => setMappingStatus(null), 2500);
     } catch {
       setMappingStatus(null);
+    } finally {
+      setPreviewing(false);
     }
   }
 
@@ -253,6 +291,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
 
     try {
       const hintedEntity = pages.find(page => page.entity);
+      const hintedCategory = pages.find(page => page.category || page.intakeCategory);
       const hintedEntityId = hintedEntity?.entity
         ? hintedEntity.entity as Id<'entities'>
         : undefined;
@@ -261,6 +300,8 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
         source: sessionSource,
         pageCount: capturedFiles.length,
         entityId: hintedEntityId,
+        category: hintedCategory?.category as DocumentCategory | undefined,
+        intakeCategory: hintedCategory?.intakeCategory,
       });
 
       for (let i = 0; i < capturedFiles.length; i++) {
@@ -303,6 +344,8 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
         issuer: page.issuer,
         title: page.title,
         entity: page.entity,
+        category: page.category,
+        intakeCategory: page.intakeCategory,
         confidence: page.confidence,
         fields: page.fields,
         action: page.action,
@@ -336,7 +379,7 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
       <input
         ref={cameraInputRef}
         type="file"
-        accept="image/*"
+        accept={ACCEPTED_CAMERA_IMAGES}
         capture="environment"
         multiple
         onChange={event => handleFiles(event, 'camera')}
@@ -353,9 +396,75 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
     </>
   );
 
-  // AIM stage
-  if (stage === 'aim' || stage === 'capturing' || stage === 'extracting') {
-    const busy = stage === 'capturing' || stage === 'extracting';
+  // AIM stage: a lightweight action sheet over the current mobile screen.
+  if (stage === 'aim') {
+    return (
+      <div onClick={onClose} style={{
+        position: 'absolute', inset: 0, zIndex: 80,
+        background: 'rgba(0,0,0,0.34)',
+        display: 'flex', alignItems: 'flex-end',
+        borderRadius: 'inherit', overflow: 'hidden',
+      }}>
+        {hiddenInput}
+        <div onClick={event => event.stopPropagation()} style={{
+          width: '100%',
+          background: 'var(--background)',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          padding: '10px 16px 30px',
+          boxShadow: '0 -18px 50px rgba(0,0,0,0.22)',
+          animation: 'capture-sheet-in 180ms ease-out',
+        }}>
+          <style>{`@keyframes capture-sheet-in { from { transform: translateY(24px); opacity: 0.7; } to { transform: translateY(0); opacity: 1; } }`}</style>
+          <div style={{ width: 38, height: 4, borderRadius: 99, background: 'var(--sep)', margin: '4px auto 14px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)' }}>Add to Julia</div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>
+                Take a photo or upload an existing file.
+              </div>
+            </div>
+            <button onClick={onClose} style={{
+              width: 32, height: 32, borderRadius: 16, border: 0,
+              background: '#fff', color: 'var(--muted)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {Ic.x(16, 'var(--muted)')}
+            </button>
+          </div>
+          {error && (
+            <div style={{
+              marginBottom: 10, padding: '9px 11px', borderRadius: 10,
+              background: 'oklch(0.96 0.04 25)', color: 'oklch(0.45 0.18 25)',
+              fontSize: 12.5, fontWeight: 600,
+            }}>
+              {error}
+            </div>
+          )}
+          <div style={{
+            background: '#fff', borderRadius: 14, overflow: 'hidden',
+            border: '0.5px solid var(--sep)',
+          }}>
+            <CaptureOption
+              icon={Ic.camera(20, 'var(--accent)')}
+              title="Take photo"
+              sub="Open the camera and add one or more pages"
+              onClick={triggerCamera}
+            />
+            <CaptureOption
+              icon={Ic.doc(20, 'var(--accent)')}
+              title="Upload file"
+              sub="Images, PDF, text, CSV, Word, or Excel"
+              onClick={triggerUpload}
+              last
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (stage === 'capturing' || stage === 'extracting') {
     return (
       <div style={{ position: 'absolute', inset: 0, background: 'var(--background)', color: 'var(--ink)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 'inherit' }}>
@@ -379,32 +488,16 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             marginBottom: 18,
           }}>
-            {busy ? <Spinner /> : Ic.camera(32, '#fff')}
+            <Spinner />
           </div>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)', letterSpacing: -0.3 }}>
-            {busy ? 'Adding page...' : 'Add document'}
+            Adding page...
           </div>
           <div style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.45, marginTop: 8, maxWidth: 280 }}>
             {pages.length > 0
               ? `${pages.length} page${pages.length > 1 ? 's' : ''} captured. Add another page or review before sending.`
               : 'Use the camera or choose an existing file. Add all pages first, then send once.'}
           </div>
-          {!busy && (
-            <div style={{ marginTop: 22, display: 'flex', gap: 8 }}>
-              <button onClick={triggerCamera} style={{
-                border: 0, borderRadius: 12,
-                background: 'var(--ink)', color: '#fff', cursor: 'pointer',
-                padding: '12px 15px', fontSize: 15, fontWeight: 700,
-                fontFamily: 'var(--font)',
-              }}>Open camera</button>
-              <button onClick={triggerUpload} style={{
-                border: '0.5px solid var(--sep)', borderRadius: 12,
-                background: '#fff', color: 'var(--ink)', cursor: 'pointer',
-                padding: '12px 15px', fontSize: 15, fontWeight: 700,
-                fontFamily: 'var(--font)',
-              }}>Upload file</button>
-            </div>
-          )}
         </div>
 
         {pages.length > 0 && (
@@ -509,7 +602,41 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
             <div style={{ margin: '10px 16px 0', padding: '10px 12px', borderRadius: 10,
               background: 'var(--accent-soft)', color: 'var(--ink)',
               fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 7 }}>
-              {Ic.sparkle(13, 'var(--accent)')} {mappingStatus}
+              {previewing ? <ScanningDots /> : Ic.sparkle(13, 'var(--accent)')} {mappingStatus}
+            </div>
+          )}
+
+          {previewing && (
+            <div style={{
+              margin: '10px 16px 0',
+              borderRadius: 12,
+              border: '0.5px solid var(--sep)',
+              background: '#fff',
+              padding: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}>
+              <div style={{
+                width: 40, height: 52, borderRadius: 9,
+                background: 'linear-gradient(180deg, #fff 0%, #F2F4F8 100%)',
+                border: '0.5px solid var(--sep)',
+                position: 'relative', overflow: 'hidden',
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  position: 'absolute', left: 0, right: 0, top: 0, height: 3,
+                  background: 'var(--accent)',
+                  animation: 'mobile-scan-line 1.15s ease-in-out infinite',
+                }} />
+                <style>{`@keyframes mobile-scan-line { 0% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(48px); opacity: 1; } 100% { transform: translateY(0); opacity: .35; } }`}</style>
+              </div>
+              <div>
+                <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 800 }}>Scanning document</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, lineHeight: 1.35 }}>
+                  Julia is matching the business and document type. You can adjust it when this finishes.
+                </div>
+              </div>
             </div>
           )}
 
@@ -517,11 +644,12 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
           {(entities?.length ?? 0) > 0 && (
             <div style={{ padding: '12px 16px 0' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>Filed under</div>
-              <button onClick={() => setShowEntityPicker(true)} style={{
+              <button disabled={previewing} onClick={() => setShowEntityPicker(true)} style={{
                 width: '100%', textAlign: 'left',
                 padding: '12px 14px', borderRadius: 12,
-                border: '1px solid var(--hair)', background: '#fff', cursor: 'pointer',
+                border: '1px solid var(--hair)', background: '#fff', cursor: previewing ? 'default' : 'pointer',
                 display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font)',
+                opacity: previewing ? 0.55 : 1,
               }}>
                 <span style={{ width: 10, height: 10, borderRadius: 99, background: activeEntity?.color ?? 'var(--sep)' }}/>
                 <div style={{ flex: 1 }}>
@@ -532,6 +660,35 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
               </button>
             </div>
           )}
+
+          <div style={{ padding: '12px 16px 0' }}>
+            <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
+              Category
+              <select disabled={previewing} value={active.intakeCategory ?? ''} onChange={event => {
+                const option = INTAKE_OPTIONS.find(item => item.value === event.target.value);
+                setPages(prev => prev.map((page, index) => index === activeIdx
+                  ? { ...page, intakeCategory: event.target.value, category: option?.category }
+                  : page));
+              }} style={{
+                marginTop: 6,
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px solid var(--hair)',
+                background: '#fff',
+                color: 'var(--ink)',
+                fontSize: 15,
+                fontFamily: 'var(--font)',
+                outline: 'none',
+                opacity: previewing ? 0.55 : 1,
+              }}>
+                <option value="" disabled>Choose category</option>
+                {INTAKE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           {/* Extracted fields */}
           {active.fields.length > 0 && (
@@ -620,21 +777,6 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
                   border: 0, fontSize: 16, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>Done</button>
               </div>
               <div style={{ background: '#fff', marginInline: 16, borderRadius: 12, overflow: 'hidden' }}>
-                <div onClick={() => {
-                  setPages(p => p.map((pg, idx) => idx === activeIdx ? { ...pg, entity: '' } : pg));
-                  setShowEntityPicker(false);
-                }} style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                  borderBottom: (entities?.length ?? 0) > 0 ? '0.5px solid var(--hair)' : 'none',
-                  cursor: 'pointer',
-                }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 99, background: 'var(--sep)' }}/>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, color: 'var(--ink)', fontWeight: 500 }}>Let Julia infer</div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>Only from entities already in this workspace</div>
-                  </div>
-                  {!active.entity && Ic.check(18, 'var(--accent)', 2.5)}
-                </div>
                 {(entities ?? []).map((ent, i) => {
                   const sel = ent._id === active.entity;
                   return (
@@ -666,6 +808,43 @@ export function CaptureFlow({ onClose, onFiled }: CaptureFlowProps) {
   return null;
 }
 
+function CaptureOption({
+  icon,
+  title,
+  sub,
+  onClick,
+  last,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  sub: string;
+  onClick: () => void;
+  last?: boolean;
+}) {
+  return (
+    <button onClick={onClick} style={{
+      width: '100%', border: 0, background: 'transparent',
+      padding: '14px 14px', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', gap: 12,
+      borderBottom: last ? 'none' : '0.5px solid var(--hair)',
+      fontFamily: 'var(--font)', textAlign: 'left',
+    }}>
+      <span style={{
+        width: 38, height: 38, borderRadius: 11,
+        background: 'var(--accent-soft)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        {icon}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 15, color: 'var(--ink)', fontWeight: 700 }}>{title}</span>
+        <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)', marginTop: 2, lineHeight: 1.35 }}>{sub}</span>
+      </span>
+    </button>
+  );
+}
+
 function Spinner() {
   return (
     <svg width={32} height={32} viewBox="0 0 32 32" style={{ animation: 'spin 1s linear infinite' }}>
@@ -673,6 +852,26 @@ function Spinner() {
       <path d="M16 4a12 12 0 0 1 12 12" fill="none" stroke="var(--accent)" strokeWidth={2.5} strokeLinecap="round" />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </svg>
+  );
+}
+
+function ScanningDots() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, width: 24, justifyContent: 'center' }}>
+      {[0, 1, 2].map(index => (
+        <span
+          key={index}
+          style={{
+            width: 4,
+            height: 4,
+            borderRadius: 99,
+            background: 'var(--accent)',
+            animation: `mobile-scan-dot 900ms ease-in-out ${index * 120}ms infinite`,
+          }}
+        />
+      ))}
+      <style>{`@keyframes mobile-scan-dot { 0%, 100% { transform: translateY(0); opacity: .35; } 45% { transform: translateY(-3px); opacity: 1; } }`}</style>
+    </span>
   );
 }
 
@@ -690,7 +889,19 @@ function PagePreview({ page, height }: { page: LocalCapturedPage; height: number
   return <DocPreview kind={page.preview} height={height} />;
 }
 
-async function fileToPreviewDataUrl(file: File) {
+async function fileToPreviewPayload(file: File) {
+  return {
+    name: file.name,
+    contentType: contentTypeFor(file, 'upload'),
+    dataUrl: isImageFile(file)
+      ? await fileToPreviewImageDataUrl(file)
+      : file.size <= 8 * 1024 * 1024
+        ? await readFileAsDataUrl(file)
+        : undefined,
+  };
+}
+
+async function fileToPreviewImageDataUrl(file: File) {
   const objectUrl = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -725,4 +936,28 @@ function readFileAsDataUrl(file: File) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function categoryForIntake(value?: string | null): DocumentCategory | undefined {
+  return INTAKE_OPTIONS.find(option => option.value === value)?.category;
+}
+
+function labelForIntake(value?: string | null) {
+  return INTAKE_OPTIONS.find(option => option.value === value)?.label;
+}
+
+function labelForCategory(value?: DocumentCategory) {
+  if (!value) return undefined;
+  const labels: Record<DocumentCategory, string> = {
+    finance: 'Finance',
+    tax: 'Tax',
+    utilities: 'Utilities',
+    legal: 'Legal',
+    insurance: 'Insurance',
+    fines: 'Fines',
+    people: 'People',
+    operations: 'Operations',
+    other: 'Other',
+  };
+  return labels[value];
 }

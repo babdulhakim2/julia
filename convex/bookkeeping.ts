@@ -40,17 +40,94 @@ export const listByEntity = query({
   },
   handler: async (ctx, args) => {
     await requireEntityMember(ctx, args.entityId);
-    const records = await ctx.db
+    return await ctx.db
       .query("bookkeepingRecords")
-      .withIndex("by_entityId_and_recordDate", (q) => q.eq("entityId", args.entityId))
+      .withIndex("by_entityId_and_recordDate", (q) => {
+        const byEntity = q.eq("entityId", args.entityId);
+        if (args.from !== undefined && args.to !== undefined) {
+          return byEntity.gte("recordDate", args.from).lt("recordDate", args.to);
+        }
+        if (args.from !== undefined) {
+          return byEntity.gte("recordDate", args.from);
+        }
+        if (args.to !== undefined) {
+          return byEntity.lt("recordDate", args.to);
+        }
+        return byEntity;
+      })
       .order("desc")
       .take(args.limit ?? 200);
+  },
+});
 
-    return records.filter((record) => {
-      if (args.from !== undefined && record.recordDate < args.from) return false;
-      if (args.to !== undefined && record.recordDate > args.to) return false;
-      return true;
-    });
+export const todaySnapshot = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    from: v.number(),
+    to: v.number(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireWorkspaceMember(ctx, args.workspaceId);
+    const records = await ctx.db
+      .query("bookkeepingRecords")
+      .withIndex("by_workspaceId_and_recordDate", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .gte("recordDate", args.from)
+          .lt("recordDate", args.to),
+      )
+      .order("desc")
+      .take(args.limit ?? 500);
+
+    const byEntity = new Map<
+      Id<"entities">,
+      {
+        entityId: Id<"entities">;
+        entityName: string;
+        entityColor: string;
+        income: number;
+        expense: number;
+        net: number;
+        count: number;
+      }
+    >();
+    let income = 0;
+    let expense = 0;
+
+    for (const record of records) {
+      const entity = await ctx.db.get(record.entityId);
+      if (!entity || entity.workspaceId !== args.workspaceId) continue;
+      const current = byEntity.get(record.entityId) ?? {
+        entityId: record.entityId,
+        entityName: entity.name,
+        entityColor: entity.color,
+        income: 0,
+        expense: 0,
+        net: 0,
+        count: 0,
+      };
+      if (record.type === "income") {
+        current.income += record.amount.amountMinor;
+        income += record.amount.amountMinor;
+      } else {
+        current.expense += record.amount.amountMinor;
+        expense += record.amount.amountMinor;
+      }
+      current.net = current.income - current.expense;
+      current.count += 1;
+      byEntity.set(record.entityId, current);
+    }
+
+    return {
+      income,
+      expense,
+      net: income - expense,
+      count: records.length,
+      entities: Array.from(byEntity.values()).sort((a, b) =>
+        b.income + b.expense - (a.income + a.expense),
+      ),
+    };
   },
 });
 

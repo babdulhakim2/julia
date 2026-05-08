@@ -52,25 +52,24 @@ export function downloadBookkeepingXls(
     return [
       `<h2>${escapeHtml(month)}</h2>`,
       '<table>',
-      '<thead><tr><th>Date</th><th>Type</th><th>Method</th><th>Description</th><th>Category</th><th>Amount</th><th>Currency</th><th>Source</th><th>Notes</th></tr></thead>',
+      '<thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Payment</th><th>Income GBP</th><th>Expense GBP</th><th>Source</th><th>Notes</th></tr></thead>',
       '<tbody>',
       monthRecords.map(record => [
         '<tr>',
         `<td>${escapeHtml(formatDate(record.recordDate))}</td>`,
-        `<td>${escapeHtml(record.type)}</td>`,
-        `<td>${escapeHtml(record.paymentMethod)}</td>`,
         `<td>${escapeHtml(record.description)}</td>`,
         `<td>${escapeHtml(record.category ?? '')}</td>`,
-        `<td>${(record.amount.amountMinor / 100).toFixed(2)}</td>`,
-        `<td>${escapeHtml(record.amount.currency)}</td>`,
+        `<td>${escapeHtml(formatPayment(record.paymentMethod))}</td>`,
+        `<td>${record.type === 'income' ? formatAmount(record.amount.amountMinor) : ''}</td>`,
+        `<td>${record.type === 'expense' ? formatAmount(record.amount.amountMinor) : ''}</td>`,
         `<td>${escapeHtml(record.source ?? '')}</td>`,
         `<td>${escapeHtml(record.notes ?? '')}</td>`,
         '</tr>',
       ].join('')).join(''),
       '</tbody>',
-      `<tfoot><tr><td colspan="5">Income</td><td>${(income / 100).toFixed(2)}</td><td colspan="3"></td></tr>`,
-      `<tr><td colspan="5">Expenses</td><td>${(expense / 100).toFixed(2)}</td><td colspan="3"></td></tr>`,
-      `<tr><td colspan="5">Net</td><td>${((income - expense) / 100).toFixed(2)}</td><td colspan="3"></td></tr></tfoot>`,
+      `<tfoot><tr><td colspan="4">Income</td><td>${formatAmount(income)}</td><td></td><td colspan="2"></td></tr>`,
+      `<tr><td colspan="4">Expenses</td><td></td><td>${formatAmount(expense)}</td><td colspan="2"></td></tr>`,
+      `<tr><td colspan="4">Net</td><td colspan="2">${formatAmount(income - expense)}</td><td colspan="2"></td></tr></tfoot>`,
       '</table>',
     ].join('');
   }).join('<br/>');
@@ -78,7 +77,7 @@ export function downloadBookkeepingXls(
   const html = [
     '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">',
     '<head><meta charset="utf-8" />',
-    '<style>body{font-family:Arial,sans-serif}table{border-collapse:collapse;margin-bottom:24px}th,td{border:1px solid #ccc;padding:6px 8px;font-size:12px}th{background:#f1f3f4;text-align:left}tfoot td{font-weight:bold;background:#fafafa}h1{font-size:18px}h2{font-size:15px}</style>',
+    '<style>body{font-family:Arial,sans-serif}table{border-collapse:collapse;margin-bottom:24px}th,td{border:1px solid #ccc;padding:6px 8px;font-size:12px}th{background:#f1f3f4;text-align:left}td:nth-child(5),td:nth-child(6){mso-number-format:"0.00";text-align:right}tfoot td{font-weight:bold;background:#fafafa}h1{font-size:18px}h2{font-size:15px}</style>',
     '</head><body>',
     `<h1>${escapeHtml(entityName)} bookkeeping - ${range}</h1>`,
     body || '<p>No records for this range.</p>',
@@ -108,6 +107,14 @@ function groupByMonth(records: BookkeepingExportRecord[]) {
 
 function formatDate(timestamp: number) {
   return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function formatAmount(amountMinor: number) {
+  return (amountMinor / 100).toFixed(2);
+}
+
+function formatPayment(value: BookkeepingExportRecord['paymentMethod']) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function escapeHtml(value: string) {

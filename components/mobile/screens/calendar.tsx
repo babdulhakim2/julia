@@ -107,7 +107,7 @@ export function CalendarView({ onOpenItem, onDocumentPreview }: CalendarViewProp
   return (
     <div style={{ paddingBottom: 120 }}>
       <NavBar large title="Calendar" sub={`${monthLabel} · ${openCount} open`}
-        trailing={<NavBtn onClick={() => { if (!isViewingClient) setAddDate(selectedDate); }}>{Ic.calendarPlus(22, isViewingClient ? 'var(--muted)' : 'var(--accent)')}</NavBtn>} />
+        leading={<NavBtn onClick={() => { if (!isViewingClient) setAddDate(selectedDate); }}>{Ic.calendarPlus(22, isViewingClient ? 'var(--muted)' : 'var(--accent)')}</NavBtn>} />
 
       <div style={{ padding: '0 16px' }}>
         <div style={{ background: '#fff', borderRadius: 8, padding: 12, border: '0.5px solid var(--sep)' }}>

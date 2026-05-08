@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useStore } from '@/lib/store';
@@ -13,6 +14,7 @@ import { CaptureFlow } from '@/components/mobile/capture/capture-flow';
 import { Toast } from '@/components/ui/toast';
 import { ClientRedirect } from '@/components/ui/client-redirect';
 import { useActiveWorkspace } from '@/lib/admin-view';
+import { Ic } from '@/components/icons';
 
 const SELECTED_ITEM_KEY = 'julia-selected-item';
 
@@ -26,6 +28,8 @@ function loadSelectedItemId() {
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const { dispatch } = useStore();
   const storeUser = useMutation(api.users.store);
@@ -92,6 +96,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       confidence: doc.confidence,
       capturedAt: timestampLabel(doc.capturedAt),
       preview: doc.category,
+      drafted: Boolean(doc.draftResponse),
+      draftText: doc.draftResponse,
+      outcomeMessage: doc.outcomeMessage,
+      intakeCategory: doc.intakeCategory,
       tags: doc.tags,
     }));
     dispatch({ type: 'SET_ITEMS', items: mapped });
@@ -217,6 +225,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {children}
         </div>
+        {!pathname.startsWith('/ask') && (
+          <button onClick={() => router.push('/ask')} aria-label="Ask Julia" style={{
+            position: 'absolute', top: 16, right: 16, zIndex: 35,
+            width: 42, height: 42, borderRadius: 21,
+            border: '0.5px solid rgba(0,0,0,0.06)',
+            background: '#fff', color: 'var(--ink)',
+            boxShadow: '0 10px 28px rgba(0,0,0,0.14)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+          }}>
+            {Ic.sparkle(21, 'var(--ink)')}
+          </button>
+        )}
         <TabBar onCapture={openCapture} />
         {isViewingClient && <AdminViewBanner name={workspace.name || workspaceName} onExit={clearView} mobile />}
         {filedToast && <Toast message={filedToast} />}

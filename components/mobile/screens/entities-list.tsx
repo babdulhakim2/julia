@@ -54,7 +54,7 @@ export function EntitiesList({ onOpenEntity, onOpenSearch, onOpenSettings }: Ent
         <div style={{
           height: 52, borderRadius: 26, background: '#E9EEF6',
           display: 'flex', alignItems: 'center', gap: 12,
-          padding: '0 12px', color: 'var(--muted)',
+          padding: '0 60px 0 12px', color: 'var(--muted)',
         }}>
           <button onClick={onOpenSettings} aria-label="Settings" style={{
             border: 0, background: 'transparent', padding: 4, cursor: 'pointer',
@@ -72,12 +72,6 @@ export function EntitiesList({ onOpenEntity, onOpenSearch, onOpenSettings }: Ent
               fontSize: 17, color: 'var(--ink)', fontFamily: 'var(--font)',
             }}
           />
-          <button onClick={onOpenSearch} aria-label="Ask Julia" style={{
-            border: 0, background: 'transparent', padding: 4, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {Ic.sparkle(22, 'var(--ink2)')}
-          </button>
         </div>
 
         <div className="no-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingTop: 14 }}>

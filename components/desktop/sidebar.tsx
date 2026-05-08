@@ -34,6 +34,7 @@ export function DesktopSidebar({ onCapture }: SidebarProps) {
   const navItems = [
     { href: '/inbox', label: 'Everything', icon: 'inbox', badge: items.filter(i => i.status !== 'done').length },
     { href: '/docs', label: 'Docs', icon: 'doc', badge: 0 },
+    { href: '/books', label: 'Books', icon: 'pound', badge: 0 },
     { href: '/calendar', label: 'Calendar', icon: 'cal', badge: dueSoon },
     { href: '/ask', label: 'Ask', icon: 'sparkle', badge: 0 },
     ...(isAdmin === true ? [{ href: '/admin', label: 'Admin', icon: 'bolt', badge: review }] : []),

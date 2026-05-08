@@ -15,13 +15,12 @@ const supportedContentTypes = [
   "image/gif",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/msword",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ];
 
 function isSupportedContentType(contentType: string) {
-  return (
-    contentType.startsWith("image/") ||
-    supportedContentTypes.includes(contentType)
-  );
+  return supportedContentTypes.includes(contentType);
 }
 
 /**
@@ -109,7 +108,7 @@ export const listByDocumentId = query({
   args: { documentId: v.id("documents") },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.documentId);
-    if (!doc) throw new Error("Document not found");
+    if (!doc) return [];
     await requireWorkspaceMember(ctx, doc.workspaceId);
     const files = await ctx.db
       .query("documentFiles")

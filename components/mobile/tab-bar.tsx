@@ -12,8 +12,8 @@ const tabs = [
   { id: 'inbox', href: '/inbox', label: 'Inbox', icon: 'inbox' as const },
   { id: 'entities', href: '/docs', label: 'Docs', icon: 'doc' as const },
   { id: 'capture', href: '', label: '', icon: 'camera' as const },
+  { id: 'books', href: '/books', label: 'Books', icon: 'pound' as const },
   { id: 'calendar', href: '/calendar', label: 'Calendar', icon: 'cal' as const },
-  { id: 'ask', href: '/ask', label: 'Ask', icon: 'sparkle' as const },
 ];
 
 export function TabBar({ onCapture }: TabBarProps) {
@@ -22,8 +22,8 @@ export function TabBar({ onCapture }: TabBarProps) {
 
   function getActive() {
     if (pathname.startsWith('/docs') || pathname.startsWith('/files')) return 'entities';
+    if (pathname.startsWith('/books')) return 'books';
     if (pathname.startsWith('/calendar')) return 'calendar';
-    if (pathname.startsWith('/ask')) return 'ask';
     return 'inbox';
   }
 
